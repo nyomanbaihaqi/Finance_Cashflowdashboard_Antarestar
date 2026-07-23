@@ -12,7 +12,7 @@
      Kalau masih kosong → app jalan pakai data demo + localStorage.
      --------------------------------------------------------------------- */
   var CONN = {
-    APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwRmgRk3UDBF8pXzKsoZOabYEZBFDaEdUW01pDigg6_mjnNdV0OyPFk23KVWVNNWhQU/exec',                                        // <-- isi setelah deploy Web App
+    APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxT5HiXmOM8oZgiScosSY9lRmafiQlW4Tlhs0AUDEiW0ktdKnRxwwwhWGHROuzDhjOs/exec',                                        // <-- isi setelah deploy Web App
     TOKEN: '',                                                  // opsional; samakan dgn TOKEN di Code.gs
     SHEET_ID: '1trHZ_CLBoA0Wl3vr9hIPgtKp2GRIF1asc-fWsxViPY8',   // Finance Dashboard
     SHEET_URL: 'https://docs.google.com/spreadsheets/d/1trHZ_CLBoA0Wl3vr9hIPgtKp2GRIF1asc-fWsxViPY8/edit'
