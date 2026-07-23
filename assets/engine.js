@@ -101,21 +101,27 @@
     return peta;
   }
 
-  /* Target GMV satu channel di satu bulan.
-     Kalau finance sudah isi breakdown per channel → pakai itu.
-     Kalau belum → pecah total bulanan pakai PORSI_MP / offline / b2b. */
+  /* Target GMV satu channel di satu bulan — HANYA yang benar-benar diisi.
+     Bulan yang belum diisi = 0, bukan tebakan. Ini yang bikin total di tabel
+     Target sama persis dengan angka yang diketik finance, dan proyeksi tidak
+     memunculkan penjualan untuk bulan yang belum punya target. */
   function targetBulananChannel(data, bln, channelId) {
     var tb = data.targetBulanan || [], i;
     for (i = 0; i < tb.length; i++) {
       if (bulanKey(tb[i].bulan) === bln && tb[i].channel === channelId) return Number(tb[i].gmv) || 0;
     }
+    return 0;
+  }
 
-    var master = null;
+  /* Saran default per channel dari target master (TARGET_2026 × PORSI_MP).
+     Bukan dipakai otomatis — cuma jadi placeholder di grid dan sumber tombol
+     "Isi dari target master". */
+  function masterChannel(bln, channelId) {
+    var master = null, i;
     for (i = 0; i < CFG.TARGET_2026.length; i++) {
       if (CFG.TARGET_2026[i].bulan === bln) { master = CFG.TARGET_2026[i]; break; }
     }
     if (!master) return 0;
-
     var ch = CFG.channel(channelId);
     if (!ch) return 0;
     if (ch.tipe === 'offline') return master.offline;
@@ -537,7 +543,7 @@
     toKey: toKey, fromKey: fromKey, bulanKey: bulanKey, tambahHari: tambahHari,
     jumlahHari: jumlahHari, rentang: rentang, tanggalBulan: tanggalBulan, pad: pad,
     bobotHari: bobotHari, sebarBulan: sebarBulan,
-    petaGmv: petaGmv, targetBulananChannel: targetBulananChannel,
+    petaGmv: petaGmv, targetBulananChannel: targetBulananChannel, masterChannel: masterChannel,
     cutoffAktual: cutoffAktual, saldoAktualPada: saldoAktualPada, hitungBaseline: hitungBaseline,
     hitung: hitung, hitungSemua: hitungSemua, omsetBulanan: omsetBulanan
   };

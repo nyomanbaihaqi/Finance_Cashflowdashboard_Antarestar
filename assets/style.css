@@ -446,6 +446,9 @@ textarea.inp { min-height: 130px; resize: vertical; font-family: var(--mono); fo
 .sel-inp:disabled { color: var(--teks3); cursor: not-allowed; }
 .sel-auto { color: var(--teks3); }
 .sel-manual { color: var(--teks); font-weight: 650; }
+/* sel target yang belum diisi: kosong, cuma placeholder saran yang samar & miring
+   supaya jelas angkanya belum masuk hitungan */
+.sel-kosong::placeholder { color: #cbd5e1; font-style: italic; font-weight: 400; }
 .sel-kotak { border-color: var(--garis); background: #fff; text-align: right; }
 .sel-status { padding: 4px 24px 4px 9px; font-size: 11.5px; font-weight: 700; border-radius: 999px; width: auto; background-position: right 6px center; }
 .sel-status.sel-hijau  { background-color: #d1fae5; color: #047857; border-color: #a7f3d0; }

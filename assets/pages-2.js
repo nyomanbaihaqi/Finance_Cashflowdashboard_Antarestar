@@ -340,14 +340,15 @@
       CFG.CHANNELS.forEach(function (c) {
         var totalBaris = 0;
         var sel = bulanList.map(function (b) {
-          var nilai = E.targetBulananChannel(d(), b, c.id);
+          var nilai = E.targetBulananChannel(d(), b, c.id);   /* 0 kalau belum diisi */
           totalBaris += nilai; totalKolom[b] += nilai;
-          var manual = d().targetBulanan.some(function (t) { return t.bulan === b && t.channel === c.id; });
+          var saran = E.masterChannel(b, c.id);               /* cuma jadi placeholder */
           var inp = el('input', {
-            class: 'sel-inp' + (manual ? ' sel-manual' : ' sel-auto'),
-            value: nilai ? UI.grup(nilai) : '', placeholder: '0',
+            class: 'sel-inp' + (nilai ? ' sel-manual' : ' sel-kosong'),
+            value: nilai ? UI.grup(nilai) : '',
+            placeholder: saran ? UI.grup(saran) : '0',
             'aria-label': c.nama + ' ' + UI.namaBulan(b),
-            title: manual ? 'diisi manual' : 'otomatis dari porsi default target master'
+            title: nilai ? 'diisi manual' : (saran ? 'kosong · saran master ' + UI.rpS(saran) + ' (tidak dihitung)' : 'kosong')
           });
           inp.addEventListener('focus', function () { inp.select(); });
           inp.addEventListener('change', function () {
@@ -370,7 +371,7 @@
         })).concat([el('td', { class: 'kanan', text: UI.rpS(grand) })])));
 
       root.appendChild(UI.seksi('Target GMV ' + tahun + ' per channel',
-        'Klik sel untuk mengubah. Geser ke samping untuk melihat bulan berikutnya.',
+        'Total cuma menjumlah sel yang benar-benar diisi. Angka samar = saran dari target master (belum dihitung — klik sel lalu Enter untuk memakainya).',
         el('div', { class: 'tabel-wrap tabel-beku' }, el('table', { class: 'tabel tabel-grid' }, [thead, tbody]))));
 
       var dataBar = bulanList.map(function (b) {
@@ -401,7 +402,7 @@
         var rows = [];
         bulanList.forEach(function (b) {
           CFG.CHANNELS.forEach(function (c) {
-            var v = E.targetBulananChannel({ targetBulanan: [] }, b, c.id);
+            var v = E.masterChannel(b, c.id);
             if (v) rows.push({ id: S.uid('tb'), bulan: b, channel: c.id, gmv: v });
           });
         });
