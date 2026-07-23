@@ -1,0 +1,659 @@
+/* ============================================================================
+   ANTARESTAR — CASHFLOW PROJECTION
+   pages-1.js — Proyeksi Kas · Kalender Kas · Simulasi What-if
+   ========================================================================== */
+(function (global) {
+  'use strict';
+
+  var UI = global.UI, CFG = global.CFG, E = global.ENGINE, S = global.STORE, CHART = global.CHART, IK = global.IK;
+  var el = UI.el;
+  var HAL = global.HAL = global.HAL || {};
+
+  function d() { return S.data(); }
+  function cfg() { return d().config; }
+  function hitungSemua() {
+    return E.hitungSemua(d(), {
+      dari: global.APP.filter.dari,
+      sampai: global.APP.filter.sampai,
+      whatIf: global.APP.filter.whatIf
+    });
+  }
+
+  /* ======================================================================
+     Pemilih periode
+     ====================================================================== */
+  function setPeriode(bulanAwal, horizon) {
+    var f = global.APP.filter;
+    f.horizon = horizon;
+    f.dari = bulanAwal + '-01';
+    var p = bulanAwal.split('-');
+    var th = +p[0], bl = +p[1] + horizon - 1;
+    th += Math.floor((bl - 1) / 12);
+    bl = ((bl - 1) % 12) + 1;
+    var kb = th + '-' + E.pad(bl);
+    f.sampai = kb + '-' + E.pad(E.jumlahHari(kb));
+  }
+
+  function geserBulan(delta) {
+    var f = global.APP.filter;
+    var b = f.dari.slice(0, 7).split('-');
+    var th = +b[0], bl = +b[1] + delta;
+    th += Math.floor((bl - 1) / 12);
+    bl = ((bl - 1) % 12 + 12) % 12 + 1;
+    setPeriode(th + '-' + E.pad(bl), f.horizon);
+  }
+
+  function pemilihPeriode(onUbah) {
+    var f = global.APP.filter;
+    var opsiBulan = [], i;
+    for (i = 0; i < 24; i++) {
+      var thn = 2026 + Math.floor(i / 12), bln = (i % 12) + 1;
+      var k = thn + '-' + E.pad(bln);
+      opsiBulan.push({ value: k, label: UI.namaBulan(k) });
+    }
+
+    var selBulan = UI.pilih(opsiBulan, f.dari.slice(0, 7),
+      function (v) { setPeriode(v, f.horizon); onUbah(); }, { class: 'inp inp-ramping' });
+
+    var selHorizon = UI.pilih([
+      { value: 1, label: '1 bulan' }, { value: 2, label: '2 bulan' }, { value: 3, label: '3 bulan' },
+      { value: 6, label: '6 bulan' }, { value: 12, label: '12 bulan' }
+    ], f.horizon, function (v) { setPeriode(f.dari.slice(0, 7), +v); onUbah(); }, { class: 'inp inp-ramping' });
+
+    var iniBulanIni = f.dari.slice(0, 7) === global.APP.hariIni.slice(0, 7) && f.horizon === 1;
+
+    return el('div', { class: 'periode' }, [
+      el('div', { class: 'periode-nav' }, [
+        UI.btn('', { ikon: 'chevron', kecil: true, title: 'Bulan sebelumnya',
+          onKlik: function () { geserBulan(-1); onUbah(); } }),
+        selBulan,
+        UI.btn('', { ikon: 'chevron', kecil: true, title: 'Bulan berikutnya',
+          onKlik: function () { geserBulan(1); onUbah(); } })
+      ]),
+      selHorizon,
+      UI.btn('Bulan ini', { kecil: true, nonaktif: iniBulanIni,
+        onKlik: function () { setPeriode(global.APP.hariIni.slice(0, 7), 1); onUbah(); } })
+    ]);
+  }
+
+  function pilSkenario(hasil, onUbah) {
+    var f = global.APP.filter;
+    var wrap = el('div', { class: 'pil-grup', role: 'radiogroup', 'aria-label': 'Skenario' });
+    CFG.SKENARIO.forEach(function (sk) {
+      var aktif = f.skenario === sk.id;
+      wrap.appendChild(el('button', {
+        class: 'pil pil-' + sk.id + (aktif ? ' aktif' : ''),
+        type: 'button', role: 'radio', 'aria-checked': aktif,
+        title: sk.nama + ' — penerimaan ×' + sk.faktor.toFixed(2),
+        onclick: function () { f.skenario = sk.id; S.simpanConfig({ skenarioAktif: sk.id }); onUbah(); }
+      }, [
+        el('span', { class: 'pil-titik', style: 'background:' + sk.warna }),
+        el('span', { text: sk.nama }),
+        el('span', { class: 'nilai', text: UI.rpS(hasil[sk.id].ringkas.saldoAkhir) })
+      ]));
+    });
+    return wrap;
+  }
+
+  /* ======================================================================
+     HALAMAN: PROYEKSI KAS
+     ====================================================================== */
+  HAL.proyeksi = {
+    judul: 'Proyeksi Kas',
+    sub: 'Estimasi saldo harian & titik rawan kas',
+    aksiUtama: { label: 'Catat kas', ikon: 'plus', onKlik: function (ulang) { global.INPUT.kasCepat('in', ulang); } },
+
+    render: function (root, ulang) {
+      var f = global.APP.filter;
+      var hasil = hitungSemua();
+      var aktif = hasil[f.skenario];
+      var hari = aktif.hari;
+      var cut = aktif.cutoff;
+      var r = aktif.ringkas;
+
+      root.appendChild(el('div', { class: 'bar-alat' }, [
+        pemilihPeriode(ulang),
+        el('div', { class: 'spacer' }),
+        pilSkenario(hasil, ulang)
+      ]));
+
+      /* ---------- KPI ---------- */
+      var hAkhirAktual = null, i;
+      for (i = 0; i < hari.length; i++) if (hari[i].tipe === 'aktual') hAkhirAktual = hari[i];
+      var saldoTerakhir = hAkhirAktual ? hAkhirAktual.saldo : r.saldoAwal;
+
+      /* Fokus ke bagian yang masih bisa ditindaklanjuti. Kalau periode yang
+         dilihat seluruhnya sudah lewat, jatuh balik ke angka seluruh periode. */
+      var adaProyeksi = !!r.terendahProyeksi;
+      var terendah = r.terendahProyeksi || r.terendah;
+      var puncak = r.puncakMasukProyeksi || r.puncakMasuk;
+      var bahaya = adaProyeksi ? r.hariBahayaProyeksi : r.hariBahaya;
+      var lalu = adaProyeksi ? r.hariBahayaLalu : [];
+      var imbuh = adaProyeksi ? ' (proyeksi)' : '';
+
+      root.appendChild(el('div', { class: 'grid g4' }, [
+        UI.kartuKpi({
+          label: 'Saldo aktual', ikon: 'wallet', warna: '#fff7ed', warnaIkon: '#ea580c',
+          nilai: UI.rpS(saldoTerakhir),
+          sub: hAkhirAktual ? 'per ' + UI.tglPanjang(hAkhirAktual.tgl) : 'belum ada data aktual'
+        }),
+        UI.kartuKpi({
+          label: 'Proyeksi akhir periode', ikon: 'target', warna: '#ecfdf5', warnaIkon: '#059669',
+          nilai: UI.rpS(r.saldoAkhir),
+          sub: 'skenario <b>' + aktif.skenario.nama + '</b> · ' + UI.tglPendek(f.sampai)
+        }),
+        UI.kartuKpi({
+          label: 'Kas terendah' + imbuh, ikon: 'alert',
+          warna: bahaya.length ? '#fff1f2' : '#f8fafc', warnaIkon: bahaya.length ? '#e11d48' : '#64748b',
+          nilai: terendah ? UI.rpS(terendah.saldo) : '—',
+          sub: terendah ? UI.tglLengkap(terendah.tgl) + ' · ' + UI.relatif(terendah.tgl, global.APP.hariIni) : '—',
+          subKelas: terendah && terendah.saldo < cfg().ambangBahaya ? 'merah tebal' : '',
+          onKlik: terendah ? function () { detailHari(terendah, aktif); } : null
+        }),
+        UI.kartuKpi({
+          label: 'Puncak masuk' + imbuh, ikon: 'trending', warna: '#eff6ff', warnaIkon: '#2563eb',
+          nilai: puncak ? UI.rpS(puncak.masuk) : '—',
+          sub: puncak ? UI.tglLengkap(puncak.tgl) + ' · ' + UI.relatif(puncak.tgl, global.APP.hariIni) : '—',
+          onKlik: puncak ? function () { detailHari(puncak, aktif); } : null
+        })
+      ]));
+
+      /* ---------- peringatan ---------- */
+      if (bahaya.length) {
+        root.appendChild(el('div', { class: 'alert alert-merah' }, [
+          IK('alert', 17),
+          el('div', null, [
+            el('div', { html: '<b>' + bahaya.length + ' hari' + (adaProyeksi ? ' ke depan' : '') +
+              '</b> saldo menembus ambang bahaya ' + UI.rpS(cfg().ambangBahaya) +
+              ' pada skenario <b>' + aktif.skenario.nama + '</b>. Terparah <b>' +
+              UI.rpS(terendah.saldo) + '</b> di ' + UI.tglPanjang(terendah.tgl) +
+              ' (' + UI.relatif(terendah.tgl, global.APP.hariIni) + ').' }),
+            el('div', { class: 'chip-baris' }, bahaya.slice(0, 10).map(function (h) {
+              return el('button', { class: 'chip chip-merah', type: 'button',
+                onclick: function () { detailHari(h, aktif); } }, [
+                el('span', { text: UI.tglPendek(h.tgl) }),
+                el('b', { text: UI.rpS(h.saldo) })
+              ]);
+            }).concat(bahaya.length > 10 ? [el('span', { class: 'muted2', text: '+' + (bahaya.length - 10) + ' lagi' })] : [])),
+            lalu.length ? el('div', { class: 'muted2', style: 'margin-top:7px',
+              text: 'Catatan: ' + lalu.length + ' hari yang sudah lewat juga di bawah ambang — itu sudah terjadi, tidak perlu ditindaklanjuti.' }) : null
+          ])
+        ]));
+      } else {
+        root.appendChild(el('div', { class: 'alert alert-hijau' }, [
+          IK('shield', 17),
+          el('div', null, [
+            el('div', { html: 'Tidak ada tanggal' + (adaProyeksi ? ' ke depan' : '') +
+              ' yang menembus ambang bahaya di skenario <b>' + aktif.skenario.nama +
+              '</b>. Titik terendah <b>' + UI.rpS(terendah ? terendah.saldo : 0) + '</b> (' +
+              (terendah ? UI.tglPanjang(terendah.tgl) : '—') + ').' }),
+            lalu.length ? el('div', { class: 'muted2', style: 'margin-top:5px',
+              text: lalu.length + ' hari yang sudah lewat sempat di bawah ambang.' }) : null
+          ])
+        ]));
+      }
+
+      /* ---------- kalibrasi ---------- */
+      var kal = kalibrasi(aktif);
+      if (kal) {
+        root.appendChild(el('div', { class: 'alert alert-kuning' }, [
+          IK('info', 17),
+          el('div', null, [
+            el('div', { html:
+              'Proyeksi penerimaan dihitung dari <b>target digicom</b>, tapi realisasi ' + kal.jml +
+              ' hari terakhir rata-rata <b>' + UI.rpS(kal.aktual) + '/hari</b> — proyeksi memasang <b>' +
+              UI.rpS(kal.proyeksi) + '/hari</b> (' + UI.persen(kal.rasio * 100, 0) + ' dari proyeksi).' }),
+            el('div', { class: 'baris', style: 'margin-top:8px' }, [
+              UI.btn('Kalibrasi netto ke realisasi', { kecil: true, ikon: 'scale', onKlik: function () {
+                UI.konfirmasi('Kalibrasi netto channel?',
+                  'Netto % semua channel dikali ' + UI.persen(kal.rasio * 100, 0) +
+                  ' supaya proyeksi penerimaan menyamai realisasi terakhir. Target GMV tidak diubah — ' +
+                  'yang disesuaikan cuma asumsi berapa persen GMV yang benar-benar jadi kas.',
+                  function () {
+                    CFG.CHANNELS.forEach(function (ch) { ch.netto = Math.round(ch.netto * kal.rasio * 10) / 10; });
+                    S.simpanConfig({ channelOverride: CFG.CHANNELS.map(function (ch) {
+                      return { id: ch.id, lag: ch.lag, netto: ch.netto }; }) })
+                      .then(function () { UI.toast('Netto channel dikalibrasi', 'sukses'); ulang(); });
+                  }, { aman: true, labelYa: 'Kalibrasi' });
+              } }),
+              el('span', { class: 'muted2', text: 'atau biarkan kalau target memang lagi dikejar' })
+            ])
+          ])
+        ]));
+      }
+
+      /* ---------- chart ---------- */
+      var plotWrap = el('div');
+      root.appendChild(el('section', { class: 'kartu' }, [
+        el('div', { class: 'kartu-head' }, [
+          el('div', { class: 'kartu-judul' }, [
+            el('h2', { text: 'Saldo harian · ' + UI.tglPanjang(f.dari) + ' – ' + UI.tglPanjang(f.sampai) }),
+            el('p', { class: 'muted', text: cut
+              ? 'Garis solid = aktual s/d ' + UI.tglPanjang(cut) + ', lalu proyeksi 3 skenario. Klik atau sentuh grafik untuk rincian per tanggal.'
+              : 'Belum ada data aktual — seluruh garis adalah proyeksi.' })
+          ])
+        ]),
+        plotWrap
+      ]));
+
+      CHART.saldoHarian(plotWrap, {
+        hasil: hasil, aktif: f.skenario, cfg: cfg(), tinggi: 400,
+        onKlikHari: function (h) { detailHari(h, aktif); }
+      });
+      plotWrap.appendChild(CHART.legenda());
+
+      /* ---------- 3 kartu skenario ---------- */
+      var g3 = el('div', { class: 'grid g3' });
+      CFG.SKENARIO.forEach(function (sk) {
+        var x = hasil[sk.id].ringkas;
+        var isAktif = f.skenario === sk.id;
+        g3.appendChild(el('button', {
+          class: 'sk-kartu' + (isAktif ? ' aktif' : ''), type: 'button',
+          onclick: function () { f.skenario = sk.id; S.simpanConfig({ skenarioAktif: sk.id }); ulang(); }
+        }, [
+          el('div', { class: 'sk-head' }, [
+            el('span', { class: 'sk-nama' }, [
+              el('span', { class: 'pil-titik', style: 'background:' + sk.warna }),
+              el('span', { text: sk.nama })
+            ]),
+            isAktif ? UI.badge('AKTIF', 'oranye') : el('span', { class: 'muted2', text: '×' + sk.faktor.toFixed(2) })
+          ]),
+          el('div', { class: 'sk-row' }, [el('span', { text: 'Penerimaan proyeksi' }), el('b', { class: 'hijau', text: UI.rpS(x.masukProyeksi) })]),
+          el('div', { class: 'sk-row' }, [el('span', { text: 'Pengeluaran proyeksi' }), el('b', { class: 'merah', text: UI.rpS(x.keluarProyeksi) })]),
+          el('div', { class: 'sk-row' }, [
+            el('span', { text: 'Kas terendah' + (x.terendahProyeksi ? ' (proyeksi)' : '') }),
+            (function () {
+              var t = x.terendahProyeksi || x.terendah;
+              return el('b', {
+                class: (t && t.saldo < cfg().ambangBahaya) ? 'merah' : '',
+                text: UI.rpS(t ? t.saldo : 0)
+              });
+            })()
+          ]),
+          el('div', { class: 'sk-row sk-akhir' }, [
+            el('span', { class: 'tebal', text: 'Saldo akhir' }),
+            el('b', { style: 'color:' + sk.warna, text: UI.rpS(x.saldoAkhir) })
+          ])
+        ]));
+      });
+      root.appendChild(g3);
+
+      root.appendChild(agendaKas(aktif, ulang));
+    }
+  };
+
+  /* Bandingkan rata-rata penerimaan harian aktual vs proyeksi. */
+  function kalibrasi(hasil) {
+    var aktualH = hasil.hari.filter(function (h) { return h.tipe === 'aktual'; });
+    var proyH = hasil.hari.filter(function (h) { return h.tipe === 'proyeksi'; });
+    if (aktualH.length < 5 || !proyH.length) return null;
+
+    var ambil = aktualH.slice(-14);
+    var avgA = ambil.reduce(function (a, h) { return a + h.masuk; }, 0) / ambil.length;
+    var avgP = hasil.ringkas.masukProyeksi / proyH.length;
+    if (!avgP) return null;
+
+    var rasio = avgA / avgP;
+    if (rasio > 0.85 && rasio < 1.15) return null;
+    return { aktual: avgA, proyeksi: avgP, rasio: rasio, jml: ambil.length };
+  }
+
+  /* Momen kas besar ke depan */
+  function agendaKas(hasil, ulang) {
+    var baris = [];
+    hasil.hari.filter(function (h) { return h.tipe === 'proyeksi'; }).forEach(function (h) {
+      h.item.forEach(function (it) {
+        if (it.sumber === 'forecast' || it.sumber === 'baseline') return;
+        if (it.nominal < 50000000) return;
+        baris.push({ tgl: h.tgl, label: it.label, coa: it.coa, nominal: it.nominal,
+                     tipe: it.tipe, saldo: h.saldo, sumber: it.sumber });
+      });
+    });
+    baris.sort(function (a, b) { return a.tgl < b.tgl ? -1 : a.tgl > b.tgl ? 1 : b.nominal - a.nominal; });
+
+    var SUMBER = { rab: ['RAB', 'biru'], recurring: ['Fixed cost', 'abu'],
+                   variabel: ['Variabel', 'kuning'], whatif: ['Simulasi', 'oranye'] };
+
+    var kolom = [
+      { judul: 'Tanggal', lebar: '128px', render: function (r) {
+          return el('div', null, [
+            el('div', { class: 'tebal nowrap', text: UI.tglPendek(r.tgl) }),
+            el('div', { class: 'muted2', text: UI.relatif(r.tgl, global.APP.hariIni) })
+          ]); },
+        cariTeks: function (r) { return UI.tglPendek(r.tgl); } },
+      { judul: 'Keterangan', render: function (r) {
+          return el('div', null, [
+            el('div', { text: r.label }),
+            el('div', { class: 'muted2', text: CFG.namaCoa(r.coa) })
+          ]); },
+        cariTeks: function (r) { return r.label + ' ' + CFG.namaCoa(r.coa); } },
+      { judul: 'Sumber', lebar: '110px', render: function (r) {
+          var v = SUMBER[r.sumber] || ['—', 'abu'];
+          return UI.badge(v[0], v[1]); },
+        cariTeks: function (r) { return (SUMBER[r.sumber] || [''])[0]; } },
+      { judul: 'Nominal', kelas: 'kanan', lebar: '150px', render: function (r) {
+          return el('span', { class: (r.tipe === 'in' ? 'hijau' : 'merah') + ' tebal',
+            text: (r.tipe === 'in' ? '+' : '−') + UI.rp(r.nominal) }); } },
+      { judul: 'Saldo setelahnya', kelas: 'kanan', lebar: '140px', render: function (r) {
+          return el('span', { class: r.saldo < cfg().ambangBahaya ? 'merah tebal' : '', text: UI.rpS(r.saldo) }); } }
+    ];
+
+    return UI.seksi('Agenda kas besar ke depan',
+      'Komitmen ≥ Rp 50 Jt dari RAB, fixed cost, dan simulasi — di luar belanja operasional harian.',
+      UI.tabel(kolom, baris, {
+        cari: baris.length > 8, cariPlaceholder: 'Cari keterangan atau pos…', maks: 25,
+        kosong: {
+          ikon: 'fileText', judul: 'Belum ada komitmen besar',
+          pesan: 'Belum ada RAB atau fixed cost ≥ Rp 50 Jt di periode ini. Proyeksi pengeluaran cuma dari baseline operasional harian.',
+          aksi: { label: 'Buat RAB', ikon: 'plus', onKlik: function () { global.INPUT.rabBaru(ulang); } }
+        }
+      }));
+  }
+
+  /* ---------------------------------------------------- modal per hari */
+  function detailHari(h, hasil) {
+    var isi = el('div');
+
+    isi.appendChild(el('div', { class: 'grid g3 grid-rapat' }, [
+      UI.kartuKpi({ label: 'Saldo akhir hari', nilai: UI.rpS(h.saldo), sub: UI.rp(h.saldo) }),
+      UI.kartuKpi({ label: 'Uang masuk', nilai: UI.rpS(h.masuk), sub: UI.rp(h.masuk) }),
+      UI.kartuKpi({ label: 'Uang keluar', nilai: UI.rpS(h.keluar), sub: UI.rp(h.keluar) })
+    ]));
+
+    var SUMBER = { rab: 'RAB', recurring: 'Fixed cost', baseline: 'Baseline harian',
+                   variabel: 'Biaya variabel', whatif: 'Simulasi', forecast: 'Dari target GMV' };
+
+    isi.appendChild(UI.tabel([
+      { judul: 'Pos', render: function (r) {
+          return el('div', null, [
+            el('div', { text: r.label }),
+            el('div', { class: 'muted2', text: r.coa === 'penjualan' ? 'Gabungan channel penjualan' : CFG.namaCoa(r.coa) })
+          ]); } },
+      { judul: 'Sumber', lebar: '130px', render: function (r) {
+          return el('span', { class: 'muted2', text: SUMBER[r.sumber] || 'Aktual' }); } },
+      { judul: 'Nominal', kelas: 'kanan', lebar: '150px', render: function (r) {
+          return el('span', { class: (r.tipe === 'in' ? 'hijau' : 'merah') + ' tebal',
+            text: (r.tipe === 'in' ? '+' : '−') + UI.rp(r.nominal) }); } }
+    ], h.item, { kosong: { ikon: 'inbox', judul: 'Tidak ada transaksi', pesan: 'Tanggal ini tidak punya arus kas masuk maupun keluar.' } }));
+
+    if (h.tipe === 'proyeksi') {
+      var rows = [];
+      for (var c in h.detailMasuk) if (h.detailMasuk.hasOwnProperty(c)) rows.push({ coa: c, nominal: h.detailMasuk[c] });
+      if (rows.length) {
+        isi.appendChild(el('h4', { class: 'sub-judul', text: 'Rincian penerimaan (dari GMV H−lag)' }));
+        isi.appendChild(UI.tabel([
+          { judul: 'Pos penerimaan', render: function (r) { return CFG.namaCoa(r.coa); } },
+          { judul: 'Nominal', kelas: 'kanan', render: function (r) {
+              return el('span', { class: 'hijau tebal', text: UI.rp(r.nominal) }); } }
+        ], rows));
+      }
+    }
+
+    UI.modal(UI.tglLengkap(h.tgl), isi, [
+      { label: 'Tutup', gaya: 'btn-ghost' },
+      { label: 'Catat kas di tanggal ini', gaya: 'btn-utama', aksi: function () {
+          setTimeout(function () { global.INPUT.kasCepat('in', function () { global.APP.render(); }); }, 220);
+        } }
+    ], {
+      sub: h.tipe === 'aktual' ? 'Data aktual' : 'Proyeksi · skenario ' + hasil.skenario.nama,
+      lebar: 'lebar'
+    });
+  }
+
+  /* ======================================================================
+     HALAMAN: KALENDER KAS
+     ====================================================================== */
+  HAL.kalender = {
+    judul: 'Kalender Kas',
+    sub: 'Lihat per tanggal — kapan uang banyak, kapan uang tipis',
+    render: function (root, ulang) {
+      var f = global.APP.filter;
+      var hasil = hitungSemua();
+      var aktif = hasil[f.skenario];
+
+      root.appendChild(el('div', { class: 'bar-alat' }, [
+        pemilihPeriode(ulang),
+        el('div', { class: 'spacer' }),
+        pilSkenario(hasil, ulang)
+      ]));
+
+      root.appendChild(el('div', { class: 'kal-legend' }, [
+        el('span', { class: 'kal-lg' }, [el('span', { class: 'kotak kotak-bahaya' }), el('span', { text: 'Bahaya · < ' + UI.rpS(cfg().ambangBahaya) })]),
+        el('span', { class: 'kal-lg' }, [el('span', { class: 'kotak kotak-waspada' }), el('span', { text: 'Waspada · < ' + UI.rpS(cfg().ambangWaspada) })]),
+        el('span', { class: 'kal-lg' }, [el('span', { class: 'kotak kotak-aman' }), el('span', { text: 'Aman' })]),
+        el('span', { class: 'kal-lg' }, [el('span', { class: 'kotak kotak-aktual' }), el('span', { text: 'Sudah aktual' })]),
+        el('span', { class: 'muted2', text: '· klik tanggal untuk rincian' })
+      ]));
+
+      var perBulan = {}, urut = [];
+      aktif.hari.forEach(function (h) {
+        var b = h.tgl.slice(0, 7);
+        if (!perBulan[b]) { perBulan[b] = []; urut.push(b); }
+        perBulan[b].push(h);
+      });
+
+      urut.forEach(function (bln) {
+        var hariBulan = perBulan[bln];
+        var masuk = 0, keluar = 0, minH = null;
+        hariBulan.forEach(function (h) {
+          masuk += h.masuk; keluar += h.keluar;
+          if (!minH || h.saldo < minH.saldo) minH = h;
+        });
+
+        var grid = el('div', { class: 'kal' });
+        UI.HARI_PENDEK.forEach(function (n) { grid.appendChild(el('div', { class: 'kal-h', text: n })); });
+
+        var pertama = new Date(hariBulan[0].tgl + 'T00:00:00').getDay(), i;
+        for (i = 0; i < pertama; i++) grid.appendChild(el('div', { class: 'kal-sel luar' }));
+
+        hariBulan.forEach(function (h) {
+          var kelas = 'kal-sel';
+          if (h.tipe === 'aktual') kelas += ' aktual';
+          if (h.saldo < cfg().ambangBahaya) kelas += ' bahaya';
+          else if (h.saldo < cfg().ambangWaspada) kelas += ' waspada';
+          if (h.tgl === global.APP.hariIni) kelas += ' kini';
+
+          var ev = h.item.filter(function (it) {
+            return it.tipe === 'out' && it.nominal >= 50000000 &&
+                   it.sumber !== 'forecast' && it.sumber !== 'baseline';
+          });
+
+          var sel = el('button', {
+            class: kelas, type: 'button',
+            title: UI.tglLengkap(h.tgl) + ' — saldo ' + UI.rp(h.saldo),
+            onclick: function () { detailHari(h, aktif); }
+          }, [
+            el('div', { class: 'kal-tgl' }, [
+              el('span', { class: 'kal-angka', text: String(UI.pecah(h.tgl).tg) }),
+              h.tipe === 'aktual' ? el('span', { class: 'kal-dot' }) : null
+            ]),
+            el('div', { class: 'kal-saldo', text: UI.angkaS(h.saldo) }),
+            el('div', { class: 'kal-flow' }, [
+              el('span', { class: 'hijau', text: '+' + UI.angkaS(h.masuk) }),
+              el('span', { class: 'merah', text: '−' + UI.angkaS(h.keluar) })
+            ]),
+            ev.length ? el('div', { class: 'kal-ev', text: ev[0].label +
+              (ev.length > 1 ? ' +' + (ev.length - 1) : '') }) : null
+          ]);
+          grid.appendChild(sel);
+        });
+
+        root.appendChild(UI.seksi(
+          UI.namaBulan(bln),
+          'Masuk ' + UI.rpS(masuk) + ' · Keluar ' + UI.rpS(keluar) +
+          ' · Terendah ' + UI.rpS(minH.saldo) + ' (' + UI.tglPendek(minH.tgl) + ')',
+          grid
+        ));
+      });
+    }
+  };
+
+  /* ======================================================================
+     HALAMAN: SIMULASI WHAT-IF
+     ====================================================================== */
+  HAL.simulasi = {
+    judul: 'Simulasi What-if',
+    sub: 'Uji rencana di luar plan — bayar pajak, budget event, DP mendadak',
+    render: function (root, ulang) {
+      var f = global.APP.filter;
+      var tanpa = E.hitungSemua(d(), { dari: f.dari, sampai: f.sampai, whatIf: [] });
+      var dengan = hitungSemua();
+
+      root.appendChild(el('div', { class: 'bar-alat' }, [
+        pemilihPeriode(ulang),
+        el('div', { class: 'spacer' }),
+        pilSkenario(dengan, ulang)
+      ]));
+
+      root.appendChild(el('div', { class: 'alert alert-biru' }, [
+        IK('info', 17),
+        el('div', { html: 'Simulasi <b>tidak tersimpan ke sheet</b> — dipakai buat ngetes dampak sebelum diputuskan. ' +
+          'Kalau sudah fix, klik <b>Jadikan RAB</b> supaya ikut terkunci di forecast.' })
+      ]));
+
+      /* --- form --- */
+      var inTgl = UI.input({ type: 'date', value: f.dari });
+      var segTipe = UI.segmen([
+        { value: 'out', label: 'Uang keluar', ikon: 'arrowUp', kelas: 'seg-merah' },
+        { value: 'in',  label: 'Uang masuk',  ikon: 'arrowDown', kelas: 'seg-hijau' }
+      ], 'out', function () { isiCoa(); });
+      var inCoa = UI.pilih([], '');
+      var inNominal = UI.inputUang(0);
+      var inLabel = UI.input({ placeholder: 'mis. Bayar PPh badan tahunan' });
+
+      function isiCoa() {
+        var arr = segTipe.dataset.nilai === 'in' ? CFG.COA_IN : CFG.COA_OUT;
+        UI.kosongkan(inCoa);
+        arr.forEach(function (c) { inCoa.appendChild(el('option', { value: c.id, text: c.nama })); });
+      }
+      isiCoa();
+
+      var fTgl = UI.field('Tanggal', inTgl, null, { wajib: true });
+      var fNom = UI.field('Nominal', inNominal, 'Bisa singkat: 500jt · 1,5m', { wajib: true });
+
+      function tambah() {
+        UI.bersihkanSalah(root);
+        var nom = UI.nilaiUang(inNominal);
+        if (!inTgl.value) { UI.salahField(fTgl, 'Tanggal wajib diisi'); return; }
+        if (!nom) { UI.salahField(fNom, 'Nominal belum diisi'); return; }
+        f.whatIf.push({
+          id: S.uid('w'), tanggal: inTgl.value, coa: inCoa.value,
+          tipe: segTipe.dataset.nilai, nominal: nom, label: inLabel.value.trim() || 'Simulasi'
+        });
+        UI.toast('Simulasi ditambahkan', 'sukses');
+        ulang();
+      }
+
+      var form = el('div', { class: 'form-grid form-simulasi' }, [
+        UI.field('Arah', segTipe), fTgl, UI.field('Pos', inCoa),
+        UI.field('Keterangan', inLabel), fNom,
+        el('div', { class: 'field field-tombol' }, UI.btn('Tambah', { gaya: 'btn-utama', ikon: 'plus', onKlik: tambah }))
+      ]);
+      form.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); tambah(); }
+      });
+
+      root.appendChild(UI.seksi('Tambah rencana', 'Masukkan pengeluaran/pemasukan di luar plan operasional.', form));
+
+      /* --- daftar --- */
+      if (f.whatIf.length) {
+        var total = f.whatIf.reduce(function (a, w) { return a + (w.tipe === 'in' ? w.nominal : -w.nominal); }, 0);
+        root.appendChild(UI.seksi('Simulasi aktif (' + f.whatIf.length + ')',
+          'Dampak bersih ' + (total >= 0 ? '+' : '') + UI.rp(total),
+          UI.tabel([
+            { judul: 'Tanggal', lebar: '110px', render: function (r) { return UI.tglPendek(r.tanggal); } },
+            { judul: 'Keterangan', render: function (r) {
+                return el('div', null, [el('div', { text: r.label }), el('div', { class: 'muted2', text: CFG.namaCoa(r.coa) })]); } },
+            { judul: 'Nominal', kelas: 'kanan', lebar: '150px', render: function (r) {
+                return el('span', { class: (r.tipe === 'in' ? 'hijau' : 'merah') + ' tebal',
+                  text: (r.tipe === 'in' ? '+' : '−') + UI.rp(r.nominal) }); } },
+            { judul: '', kelas: 'kanan', lebar: '52px', cari: false, render: function (r) {
+                return UI.btn('', { ikon: 'trash', kecil: true, gaya: 'btn-ghost', title: 'Hapus',
+                  onKlik: function (e) {
+                    var salinan = f.whatIf.slice();
+                    f.whatIf = f.whatIf.filter(function (x) { return x.id !== r.id; });
+                    UI.toast('Simulasi dihapus', 'sukses', {
+                      onUndo: function () { f.whatIf = salinan; ulang(); }
+                    });
+                    ulang();
+                  } }); } }
+          ], f.whatIf),
+          el('div', { class: 'baris' }, [
+            UI.btn('Kosongkan', { kecil: true, ikon: 'trash', onKlik: function () {
+              var salinan = f.whatIf.slice();
+              f.whatIf = [];
+              UI.toast('Semua simulasi dikosongkan', 'sukses', { onUndo: function () { f.whatIf = salinan; ulang(); } });
+              ulang();
+            } }),
+            UI.btn('Jadikan RAB', { kecil: true, gaya: 'btn-utama', ikon: 'fileText',
+              onKlik: function () { simulasiKeRab(ulang); } })
+          ])
+        ));
+      } else {
+        root.appendChild(UI.seksi('Simulasi aktif', null, UI.kosong({
+          ikon: 'flask', judul: 'Belum ada simulasi',
+          pesan: 'Tambahkan rencana di form atas untuk melihat dampaknya ke kurva saldo.'
+        })));
+      }
+
+      /* --- dampak --- */
+      var g3 = el('div', { class: 'grid g3' });
+      CFG.SKENARIO.forEach(function (sk) {
+        var a = tanpa[sk.id].ringkas, b = dengan[sk.id].ringkas;
+        var selisih = b.saldoAkhir - a.saldoAkhir;
+        var tA = a.terendahProyeksi || a.terendah, tB = b.terendahProyeksi || b.terendah;
+        var minA = tA ? tA.saldo : 0, minB = tB ? tB.saldo : 0;
+        g3.appendChild(el('div', { class: 'sk-kartu' + (f.skenario === sk.id ? ' aktif' : '') }, [
+          el('div', { class: 'sk-head' }, [
+            el('span', { class: 'sk-nama' }, [
+              el('span', { class: 'pil-titik', style: 'background:' + sk.warna }),
+              el('span', { text: sk.nama })
+            ])
+          ]),
+          el('div', { class: 'sk-row' }, [el('span', { text: 'Saldo akhir semula' }), el('b', { text: UI.rpS(a.saldoAkhir) })]),
+          el('div', { class: 'sk-row' }, [el('span', { text: 'Setelah simulasi' }), el('b', { style: 'color:' + sk.warna, text: UI.rpS(b.saldoAkhir) })]),
+          el('div', { class: 'sk-row' }, [el('span', { text: 'Selisih' }),
+            el('b', { class: selisih < 0 ? 'merah' : 'hijau', text: (selisih >= 0 ? '+' : '') + UI.rpS(selisih) })]),
+          el('div', { class: 'sk-row sk-akhir' }, [
+            el('span', { text: 'Kas terendah' }),
+            el('b', { class: minB < cfg().ambangBahaya ? 'merah' : '',
+              text: UI.rpS(minB) + (minB !== minA ? ' (dari ' + UI.rpS(minA) + ')' : '') })
+          ])
+        ]));
+      });
+      root.appendChild(g3);
+
+      var plotWrap = el('div');
+      root.appendChild(UI.seksi('Kurva setelah simulasi', 'Skenario aktif: ' + dengan[f.skenario].skenario.nama, plotWrap));
+      CHART.saldoHarian(plotWrap, { hasil: dengan, aktif: f.skenario, cfg: cfg(), tinggi: 360,
+        onKlikHari: function (h) { detailHari(h, dengan[f.skenario]); } });
+      plotWrap.appendChild(CHART.legenda());
+    }
+  };
+
+  function simulasiKeRab(ulang) {
+    var f = global.APP.filter;
+    var keluar = f.whatIf.filter(function (w) { return w.tipe === 'out'; });
+    if (!keluar.length) { UI.toast('Tidak ada item pengeluaran untuk dipindahkan', 'warn'); return; }
+    UI.konfirmasi('Pindahkan ke RAB?',
+      keluar.length + ' item simulasi akan disimpan jadi RAB berstatus draft dan ikut terhitung permanen di forecast.',
+      function () {
+        Promise.all(keluar.map(function (w) {
+          return S.tambah('rab', {
+            bulan: w.tanggal.slice(0, 7), divisi: 'FINANCE', kegiatan: 'Dari simulasi',
+            tanggalRencana: w.tanggal, deskripsi: w.label, item: 1, satuan: w.nominal,
+            ket: 'idr', total: w.nominal, coa: w.coa, status: 'draft'
+          });
+        })).then(function () {
+          f.whatIf = f.whatIf.filter(function (w) { return w.tipe !== 'out'; });
+          UI.toast(keluar.length + ' item tersimpan sebagai RAB draft', 'sukses');
+          ulang();
+        });
+      }, { aman: true, labelYa: 'Simpan sebagai RAB' });
+  }
+
+  HAL._detailHari = detailHari;
+  HAL._pemilihPeriode = pemilihPeriode;
+  HAL._pilSkenario = pilSkenario;
+  HAL._setPeriode = setPeriode;
+})(window);
