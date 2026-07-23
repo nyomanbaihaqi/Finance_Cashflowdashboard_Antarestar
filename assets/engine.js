@@ -168,6 +168,62 @@
     return peta;
   }
 
+  /* Rencana Pengeluaran (grid bulanan/harian per kategori) → { tanggal: [..] }.
+     Nominal bulanan disebar RATA ke seluruh hari bulan itu (beda dari target
+     penjualan yang pakai pola campaign — pengeluaran tidak ikut pola 8.8).
+     Override harian menimpa nilai tanggal spesifik, persis seperti target. */
+  function petaRencana(data, tanggalList, cutoff) {
+    var peta = {};
+    var rb = data.rencanaBulanan || [], rh = data.rencanaHarian || [], i;
+
+    /* map[coa][tanggal] = nominal */
+    var map = {};
+    function set(coa, tgl, nominal, sumber) {
+      if (!map[coa]) map[coa] = {};
+      map[coa][tgl] = { nominal: nominal, sumber: sumber };
+    }
+
+    /* 1. sebar rata dari rencana bulanan */
+    for (i = 0; i < rb.length; i++) {
+      var r = rb[i];
+      var nominal = Number(r.nominal) || 0;
+      if (!nominal || !r.coa) continue;
+      var bln = bulanKey(r.bulan);
+      var tgls = tanggalBulan(bln), per = Math.round(nominal / tgls.length), j;
+      for (j = 0; j < tgls.length; j++) set(r.coa, tgls[j], per, 'rencana');
+    }
+
+    /* 2. override harian menang */
+    for (i = 0; i < rh.length; i++) {
+      var h = rh[i];
+      var n = Number(h.nominal) || 0;
+      if (!h.coa) continue;
+      set(h.coa, String(h.tanggal).slice(0, 10), n, 'rencana');
+    }
+
+    /* 3. rakit per tanggal yang diminta */
+    for (i = 0; i < tanggalList.length; i++) {
+      var tgl = tanggalList[i];
+      if (cutoff && tgl <= cutoff) continue;              // dilewati, sudah aktual
+      for (var coa in map) {
+        if (!map.hasOwnProperty(coa)) continue;
+        var sel = map[coa][tgl];
+        if (!sel || !sel.nominal) continue;
+        if (!peta[tgl]) peta[tgl] = [];
+        peta[tgl].push({ coa: coa, nominal: sel.nominal, label: 'Rencana pengeluaran', sumber: 'rencana' });
+      }
+    }
+    return peta;
+  }
+
+  /* Kategori yang punya rencana bulanan — dipakai untuk mengecualikan baseline
+     supaya tidak dobel dengan grid rencana. */
+  function coaBerencana(data) {
+    var out = {}, rb = data.rencanaBulanan || [], i;
+    for (i = 0; i < rb.length; i++) if ((Number(rb[i].nominal) || 0) && rb[i].coa) out[rb[i].coa] = true;
+    return out;
+  }
+
   /* Recurring → { tanggal: [ {...} ] } untuk rentang tanggal yang diminta */
   function petaRecurring(data, tanggalList, cutoff) {
     var peta = {}, rec = data.recurring || [], i, j;
@@ -248,8 +304,12 @@
     var n = Math.max(1, Number(cfg.baselineHari) || 30);
     var mulai = tambahHari(cut, -(n - 1));
 
+    /* kecualikan pos yang sudah dijadwalkan lewat fixed cost ATAU direncanakan
+       lewat grid Rencana Pengeluaran — supaya tidak dobel dengan baseline */
     var terjadwal = {};
     (data.recurring || []).forEach(function (r) { if (r.aktif !== false) terjadwal[r.coa] = true; });
+    var berencana = coaBerencana(data);
+    for (var cb in berencana) if (berencana.hasOwnProperty(cb)) terjadwal[cb] = true;
 
     var total = {}, act = data.actual || [], i, awalData = '';
     for (i = 0; i < act.length; i++) {
@@ -351,6 +411,7 @@
     var aktual = petaAktual(data);
     var rab = petaRab(data, cutoff);
     var recur = petaRecurring(data, tanggalList, cutoff);
+    var rencana = petaRencana(data, tanggalList, cutoff);
     var vari = petaVariabel(data, cfg, gmv, tanggalList, faktor, cutoff);
     var baseline = hitungBaseline(data, cfg);
     var baselineItem = [];
@@ -398,8 +459,8 @@
         detailMasuk = kas.detail; masuk = kas.total;
         if (masuk) item.push({ coa: 'penjualan', nominal: masuk, tipe: 'in', label: 'Penerimaan penjualan (H+lag)', sumber: 'forecast' });
 
-        /* pengeluaran: baseline harian + RAB + recurring + variabel */
-        var srcs = [baselineItem, rab[tgl] || [], recur[tgl] || [], vari[tgl] || []];
+        /* pengeluaran: baseline harian + rencana grid + RAB + recurring + variabel */
+        var srcs = [baselineItem, rencana[tgl] || [], rab[tgl] || [], recur[tgl] || [], vari[tgl] || []];
         for (j = 0; j < srcs.length; j++) {
           var arr = srcs[j], m;
           for (m = 0; m < arr.length; m++) {
@@ -545,6 +606,7 @@
     bobotHari: bobotHari, sebarBulan: sebarBulan,
     petaGmv: petaGmv, targetBulananChannel: targetBulananChannel, masterChannel: masterChannel,
     cutoffAktual: cutoffAktual, saldoAktualPada: saldoAktualPada, hitungBaseline: hitungBaseline,
+    petaRencana: petaRencana, coaBerencana: coaBerencana,
     hitung: hitung, hitungSemua: hitungSemua, omsetBulanan: omsetBulanan
   };
 })(window);

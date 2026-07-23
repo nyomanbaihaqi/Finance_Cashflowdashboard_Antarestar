@@ -311,7 +311,7 @@
     });
     baris.sort(function (a, b) { return a.tgl < b.tgl ? -1 : a.tgl > b.tgl ? 1 : b.nominal - a.nominal; });
 
-    var SUMBER = { rab: ['RAB', 'biru'], recurring: ['Fixed cost', 'abu'],
+    var SUMBER = { rab: ['RAB', 'biru'], recurring: ['Fixed cost', 'abu'], rencana: ['Rencana', 'oranye'],
                    variabel: ['Variabel', 'kuning'], whatif: ['Simulasi', 'oranye'] };
 
     var kolom = [
@@ -361,7 +361,7 @@
     ]));
 
     var SUMBER = { rab: 'RAB', recurring: 'Fixed cost', baseline: 'Baseline harian',
-                   variabel: 'Biaya variabel', whatif: 'Simulasi', forecast: 'Dari target GMV' };
+                   rencana: 'Rencana', variabel: 'Biaya variabel', whatif: 'Simulasi', forecast: 'Dari target GMV' };
 
     isi.appendChild(UI.tabel([
       { judul: 'Pos', render: function (r) {

@@ -23,8 +23,10 @@ var SKEMA = {
   TargetHarian:  ['id', 'tanggal', 'channel', 'gmv'],
   RAB:           ['id', 'bulan', 'divisi', 'kegiatan', 'benefit', 'tanggalRencana',
                   'deskripsi', 'item', 'satuan', 'ket', 'total', 'coa', 'status'],
-  Recurring:     ['id', 'nama', 'coa', 'nominal', 'tanggal', 'mulai', 'selesai', 'aktif'],
-  Variabel:      ['id', 'nama', 'coa', 'persen', 'aktif']
+  Recurring:      ['id', 'nama', 'coa', 'nominal', 'tanggal', 'mulai', 'selesai', 'aktif'],
+  Variabel:       ['id', 'nama', 'coa', 'persen', 'aktif'],
+  RencanaBulanan: ['id', 'bulan', 'coa', 'nominal'],
+  RencanaHarian:  ['id', 'tanggal', 'coa', 'nominal']
 };
 
 /* Nama key di frontend → nama tab di spreadsheet */
@@ -34,7 +36,9 @@ var TAB = {
   targetHarian: 'TargetHarian',
   rab: 'RAB',
   recurring: 'Recurring',
-  variabel: 'Variabel'
+  variabel: 'Variabel',
+  rencanaBulanan: 'RencanaBulanan',
+  rencanaHarian: 'RencanaHarian'
 };
 
 /* Kolom yang isinya tanggal — dipaksa jadi teks 'YYYY-MM-DD' saat dibaca */
@@ -190,7 +194,9 @@ function aksiBootstrap() {
     targetHarian:  bacaTab('TargetHarian'),
     rab:           bacaTab('RAB'),
     recurring:     bacaTab('Recurring'),
-    variabel:      bacaTab('Variabel')
+    variabel:      bacaTab('Variabel'),
+    rencanaBulanan: bacaTab('RencanaBulanan'),
+    rencanaHarian:  bacaTab('RencanaHarian')
   };
 }
 

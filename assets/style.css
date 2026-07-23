@@ -693,6 +693,43 @@ textarea.inp { min-height: 130px; resize: vertical; font-family: var(--mono); fo
 .tabel tr.baris-redup td { opacity: .5; }
 .tabel tr.baris-redup td:first-child, .tabel tr.baris-redup td:nth-child(4) { opacity: 1; }
 
+/* ------------------------------------------------ cashflow harian matrix */
+.cf-wrap { max-height: 72vh; overflow: auto; }
+.cf-tabel { font-size: 12px; border-collapse: separate; border-spacing: 0; }
+.cf-tabel th, .cf-tabel td { white-space: nowrap; }
+.cf-tabel .th-pos { min-width: 210px; text-align: left; z-index: 5; }
+.cf-tabel thead th { position: sticky; top: 0; z-index: 4; background: var(--panel2); vertical-align: bottom; }
+.cf-tabel .kolom-beku { position: sticky; left: 0; background: #fff; z-index: 3; box-shadow: 1px 0 0 var(--garis); }
+.cf-tabel thead .kolom-beku { z-index: 6; background: var(--panel2); }
+.th-tgl { min-width: 74px; padding: 6px 10px; font-size: 10px; }
+.th-tgl-hari { font-weight: 600; color: var(--teks3); }
+.th-aktual { background: #eef2f7 !important; }
+.th-cutoff { box-shadow: inset -2px 0 0 var(--aksen); }
+.th-total { min-width: 88px; background: #0d1526 !important; color: #fff; }
+
+.cf-sel { padding: 5px 10px; font-variant-numeric: tabular-nums; color: var(--teks2); }
+.cf-proy { background: #fffaf4; }
+.cf-tabel tbody tr:hover td.cf-sel { background: #f1f5f9; }
+.cf-tabel tbody tr:hover td.cf-proy { background: #fff2e4; }
+.cf-label { text-align: left; display: flex; align-items: center; gap: 7px; }
+.cf-dot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.cf-total-sel { font-variant-numeric: tabular-nums; font-weight: 600; background: #f8fafc; box-shadow: -1px 0 0 var(--garis); }
+
+.cf-seksi td { background: #0d1526; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .08em; padding: 5px 10px; }
+.cf-seksi .kolom-beku { background: #0d1526; color: #fff; }
+.cf-in td, .cf-out td { color: var(--teks); }
+.cf-subtotal td { background: #f1f5f9; font-weight: 700; }
+.cf-subtotal .kolom-beku { background: #f1f5f9; }
+.cf-total td { background: #e8edf5; font-weight: 800; border-top: 1.5px solid #cbd5e1; }
+.cf-total .kolom-beku { background: #e8edf5; }
+.cf-saldo td, .cf-saldo-akhir td { font-weight: 700; }
+.cf-saldo td { background: #fbfcfe; color: var(--teks); }
+.cf-saldo-akhir td { background: #ecfdf5; }
+.cf-saldo-akhir .kolom-beku { background: #ecfdf5; }
+.cf-saldo-akhir .cf-sel.klik { cursor: pointer; }
+.cf-saldo-akhir .cf-sel.klik:hover { background: var(--aksen-bg); color: var(--aksen); }
+.cf-sel.cf-bahaya { color: var(--merah) !important; font-weight: 800; }
+
 /* --------------------------------------------------- command palette */
 .cp-bg {
   position: fixed; inset: 0; background: rgba(15,23,42,.4); backdrop-filter: blur(3px);
@@ -861,6 +898,18 @@ textarea.inp { min-height: 130px; resize: vertical; font-family: var(--mono); fo
   .tabel-rab tr { padding: 8px; }
   .tabel-rab td { border-bottom: 0; padding: 4px 4px; }
   .cari-wrap { max-width: none; }
+
+  /* matrix cashflow harian & grid target/rencana tetap tabel scroll di HP —
+     jangan ikut diubah jadi kartu bertumpuk */
+  .cf-wrap, .tabel-beku { border: 1px solid var(--garis); overflow: auto; }
+  .cf-tabel, .cf-tabel thead, .cf-tabel tbody, .cf-tabel tr, .cf-tabel td, .cf-tabel th,
+  .tabel-grid, .tabel-grid thead, .tabel-grid tbody, .tabel-grid tr, .tabel-grid td, .tabel-grid th {
+    display: revert; width: auto;
+  }
+  .cf-tabel tr, .tabel-grid tr { border: 0; margin: 0; background: none; padding: 0; }
+  .cf-tabel td, .tabel-grid td { text-align: right; border-bottom: 1px solid var(--garis2); }
+  .cf-tabel td::before, .tabel-grid td::before { display: none; }
+  .cf-tabel .kolom-beku, .tabel-grid .kolom-beku { position: sticky; left: 0; min-width: 150px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

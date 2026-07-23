@@ -20,7 +20,9 @@
       targetHarian: [],
       rab: [],
       recurring: [],
-      variabel: []
+      variabel: [],
+      rencanaBulanan: [],
+      rencanaHarian: []
     }
   };
 
@@ -151,7 +153,8 @@
   function normalisasi(d) {
     d = d || {};
     d.config = Object.assign({}, CFG.DEFAULT_CONFIG, d.config || {});
-    ['actual', 'targetBulanan', 'targetHarian', 'rab', 'recurring', 'variabel'].forEach(function (k) {
+    ['actual', 'targetBulanan', 'targetHarian', 'rab', 'recurring', 'variabel',
+     'rencanaBulanan', 'rencanaHarian'].forEach(function (k) {
       if (!Array.isArray(d[k])) d[k] = [];
     });
 
@@ -169,6 +172,8 @@
     });
     d.targetBulanan.forEach(function (r) { r.gmv = Number(r.gmv) || 0; r.bulan = String(r.bulan).slice(0, 7); });
     d.targetHarian.forEach(function (r) { r.gmv = Number(r.gmv) || 0; r.tanggal = String(r.tanggal).slice(0, 10); });
+    d.rencanaBulanan.forEach(function (r) { r.nominal = Number(r.nominal) || 0; r.bulan = String(r.bulan).slice(0, 7); });
+    d.rencanaHarian.forEach(function (r) { r.nominal = Number(r.nominal) || 0; r.tanggal = String(r.tanggal).slice(0, 10); });
 
     ['saldoAwal', 'ambangBahaya', 'ambangWaspada', 'lagDefault', 'kursRMB', 'kursUSD', 'horizonBulan', 'baselineHari']
       .forEach(function (k) { d.config[k] = Number(d.config[k]) || 0; });

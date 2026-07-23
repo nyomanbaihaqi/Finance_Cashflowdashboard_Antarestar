@@ -11,11 +11,13 @@
   /* Dipakai juga oleh command palette */
   var MENU_HAL = global.MENU_HAL = [
     { id: 'proyeksi', ik: 'trending', label: 'Proyeksi Kas',      grup: 'Monitoring', kata: 'dashboard grafik saldo forecast' },
+    { id: 'harian',   ik: 'grid',     label: 'Cashflow Harian',   grup: 'Monitoring', kata: 'tabel matrix hari per hari rekap day by day pos' },
     { id: 'kalender', ik: 'calendar', label: 'Kalender Kas',      grup: 'Monitoring', kata: 'bulanan tanggal harian' },
     { id: 'simulasi', ik: 'flask',    label: 'Simulasi What-if',  grup: 'Monitoring', kata: 'what if uji coba pajak skenario' },
     { id: 'input',    ik: 'inbox',    label: 'Input',             grup: 'Input',      kata: 'catat entry tambah baru' },
     { id: 'rab',      ik: 'fileText', label: 'RAB',               grup: 'Input',      kata: 'anggaran divisi pengajuan budget' },
-    { id: 'target',   ik: 'target',   label: 'Target Digicom',    grup: 'Input',      kata: 'gmv omset channel marketplace' },
+    { id: 'target',   ik: 'target',   label: 'Target Digicom',    grup: 'Input',      kata: 'gmv omset channel marketplace penerimaan' },
+    { id: 'rencana',  ik: 'grid',     label: 'Rencana Pengeluaran', grup: 'Input',    kata: 'pengeluaran plot budget anggaran keluar per kategori bulanan' },
     { id: 'fixed',    ik: 'repeat',   label: 'Pengeluaran Rutin', grup: 'Input',      kata: 'fixed cost baseline gaji sewa variabel' },
     { id: 'aktual',   ik: 'card',     label: 'Aktual Harian',     grup: 'Input',      kata: 'realisasi mutasi transaksi' },
     { id: 'setting',  ik: 'settings', label: 'Pengaturan',        grup: 'Sistem',     kata: 'setting saldo awal ambang kurs lag' }
