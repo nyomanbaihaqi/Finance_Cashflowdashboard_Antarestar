@@ -340,19 +340,44 @@
       CFG.CHANNELS.forEach(function (c) {
         var totalBaris = 0;
         var sel = bulanList.map(function (b) {
-          var nilai = E.targetBulananChannel(d(), b, c.id);   /* 0 kalau belum diisi */
+          var nilai = tNilaiEfektif(b, c.id);
+          var sumber = tSumber(b, c.id);
           totalBaris += nilai; totalKolom[b] += nilai;
           var saran = E.masterChannel(b, c.id);               /* cuma jadi placeholder */
+          var jmlHari = sumber === 'harian' ? tHarianRows(b, c.id).length : 0;
           var inp = el('input', {
-            class: 'sel-inp' + (nilai ? ' sel-manual' : ' sel-kosong'),
+            class: 'sel-inp' + (nilai ? (sumber === 'harian' ? ' sel-harian' : ' sel-manual') : ' sel-kosong'),
             value: nilai ? UI.grup(nilai) : '',
             placeholder: saran ? UI.grup(saran) : '0',
             'aria-label': c.nama + ' ' + UI.namaBulan(b),
-            title: nilai ? 'diisi manual' : (saran ? 'kosong · saran master ' + UI.rpS(saran) + ' (tidak dihitung)' : 'kosong')
+            title: sumber === 'harian'
+              ? 'dari override harian (' + jmlHari + ' tanggal) — klik "Override harian" untuk ubah per tanggal'
+              : (nilai ? 'diisi manual' : (saran ? 'kosong · saran master ' + UI.rpS(saran) + ' (tidak dihitung)' : 'kosong'))
           });
           inp.addEventListener('focus', function () { inp.select(); });
           inp.addEventListener('change', function () {
-            simpanTarget(b, c.id, UI.parseUang(inp.value)).then(ulang);
+            var baru = UI.parseUang(inp.value);
+            if (baru === nilai) return;
+            if (sumber === 'harian') {
+              if (!baru) {
+                UI.konfirmasi('Hapus override harian?',
+                  c.nama + ' ' + UI.namaBulan(b) + ' punya ' + jmlHari + ' tanggal (total ' + UI.rpS(nilai) + '). Hapus semua?',
+                  function () { tHapusHarian(b, c.id).then(function () { UI.toast('Override harian dihapus', 'sukses'); ulang(); }); },
+                  { labelYa: 'Ya, hapus' });
+                ulang();
+              } else {
+                UI.konfirmasi('Ganti jadi target bulanan?',
+                  c.nama + ' ' + UI.namaBulan(b) + ' sekarang diisi per tanggal (' + jmlHari + ' hari). ' +
+                  'Ubah jadi target bulanan ' + UI.rpS(baru) + ' (disebar pakai pola)? Override harian yang detail akan diganti.',
+                  function () {
+                    tHapusHarian(b, c.id).then(function () { return simpanTarget(b, c.id, baru); })
+                      .then(function () { UI.toast('Diganti jadi target bulanan', 'sukses'); ulang(); });
+                  }, { labelYa: 'Ya, ganti' });
+                ulang();
+              }
+              return;
+            }
+            simpanTarget(b, c.id, baru).then(ulang);
           });
           return el('td', { class: 'kanan' }, inp);
         });
@@ -370,8 +395,11 @@
           return el('td', { class: 'kanan', text: UI.rpS(totalKolom[b]) });
         })).concat([el('td', { class: 'kanan', text: UI.rpS(grand) })])));
 
+      var adaTHarian = d().targetHarian.length > 0;
       root.appendChild(UI.seksi('Target GMV ' + tahun + ' per channel',
-        'Total cuma menjumlah sel yang benar-benar diisi. Angka samar = saran dari target master (belum dihitung — klik sel lalu Enter untuk memakainya).',
+        'Isi bulanan (disebar ke harian otomatis) atau isi per tanggal di Override harian — dua-duanya nyambung. ' +
+        (adaTHarian ? 'Sel biru = dari override harian; angkanya jumlah sebulan. ' : '') +
+        'Angka samar = saran master (belum dihitung).',
         el('div', { class: 'tabel-wrap tabel-beku' }, el('table', { class: 'tabel tabel-grid' }, [thead, tbody]))));
 
       var dataBar = bulanList.map(function (b) {
@@ -383,6 +411,32 @@
       CHART.batangBulanan(barWrap, dataBar, { labelA: 'Target', labelB: 'Realisasi', warna: '#2563eb', tinggi: 230 });
     }
   };
+
+  /* ---- jembatan bulanan <-> harian ---- */
+  function tHarianRows(bulan, channel) {
+    return d().targetHarian.filter(function (x) {
+      return String(x.tanggal).slice(0, 7) === bulan && x.channel === channel;
+    });
+  }
+  function tTotalHarian(bulan, channel) {
+    return tHarianRows(bulan, channel).reduce(function (a, x) { return a + (Number(x.gmv) || 0); }, 0);
+  }
+  /* nilai efektif: target bulanan kalau ada, kalau tidak jumlah override harian */
+  function tNilaiEfektif(bulan, channel) {
+    var m = E.targetBulananChannel(d(), bulan, channel);
+    if (m) return m;
+    return tTotalHarian(bulan, channel);
+  }
+  function tSumber(bulan, channel) {
+    if (E.targetBulananChannel(d(), bulan, channel)) return 'bulanan';
+    if (tHarianRows(bulan, channel).length) return 'harian';
+    return '';
+  }
+  function tHapusHarian(bulan, channel) {
+    return tHarianRows(bulan, channel).reduce(function (p, r) {
+      return p.then(function () { return S.hapus('targetHarian', r.id); });
+    }, Promise.resolve());
+  }
 
   function simpanTarget(bulan, channel, gmv) {
     var ada = d().targetBulanan.filter(function (t) { return t.bulan === bulan && t.channel === channel; })[0];

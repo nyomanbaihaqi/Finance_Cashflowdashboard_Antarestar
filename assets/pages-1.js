@@ -117,6 +117,10 @@
         pilSkenario(hasil, ulang)
       ]));
 
+      /* ---------- vonis: kesimpulan dulu, grafik belakangan ---------- */
+      var v = vonis(aktif, cfg());
+      if (v) root.appendChild(kartuVonis(v, ulang));
+
       /* ---------- KPI ---------- */
       var hAkhirAktual = null, i;
       for (i = 0; i < hari.length; i++) if (hari[i].tipe === 'aktual') hAkhirAktual = hari[i];
@@ -131,6 +135,11 @@
       var lalu = adaProyeksi ? r.hariBahayaLalu : [];
       var imbuh = adaProyeksi ? ' (proyeksi)' : '';
 
+      /* seri buat sparkline KPI */
+      var sSaldo = hari.map(function (h) { return h.saldo; });
+      var sMasuk = hari.map(function (h) { return h.masuk; });
+      var CB = global.CHARTB;
+
       root.appendChild(el('div', { class: 'grid g4' }, [
         UI.kartuKpi({
           label: 'Saldo aktual', ikon: 'wallet', warna: '#fff7ed', warnaIkon: '#ea580c',
@@ -140,7 +149,8 @@
         UI.kartuKpi({
           label: 'Proyeksi akhir periode', ikon: 'target', warna: '#ecfdf5', warnaIkon: '#059669',
           nilai: UI.rpS(r.saldoAkhir),
-          sub: 'skenario <b>' + aktif.skenario.nama + '</b> · ' + UI.tglPendek(f.sampai)
+          sub: 'skenario <b>' + aktif.skenario.nama + '</b> · ' + UI.tglPendek(f.sampai),
+          spark: CB.sparkline(sSaldo, { tipe: 'garis', warna: aktif.skenario.warna })
         }),
         UI.kartuKpi({
           label: 'Kas terendah' + imbuh, ikon: 'alert',
@@ -148,26 +158,25 @@
           nilai: terendah ? UI.rpS(terendah.saldo) : '—',
           sub: terendah ? UI.tglLengkap(terendah.tgl) + ' · ' + UI.relatif(terendah.tgl, global.APP.hariIni) : '—',
           subKelas: terendah && terendah.saldo < cfg().ambangBahaya ? 'merah tebal' : '',
-          onKlik: terendah ? function () { detailHari(terendah, aktif); } : null
+          onKlik: terendah ? function () { detailHari(terendah, aktif); } : null,
+          spark: CB.sparkline(sSaldo, { tipe: 'garis', warna: bahaya.length ? '#e11d48' : '#94a3b8' })
         }),
         UI.kartuKpi({
           label: 'Puncak masuk' + imbuh, ikon: 'trending', warna: '#eff6ff', warnaIkon: '#2563eb',
           nilai: puncak ? UI.rpS(puncak.masuk) : '—',
           sub: puncak ? UI.tglLengkap(puncak.tgl) + ' · ' + UI.relatif(puncak.tgl, global.APP.hariIni) : '—',
-          onKlik: puncak ? function () { detailHari(puncak, aktif); } : null
+          onKlik: puncak ? function () { detailHari(puncak, aktif); } : null,
+          spark: CB.sparkline(sMasuk, { tipe: 'batang', warna: '#2563eb' })
         })
       ]));
 
-      /* ---------- peringatan ---------- */
+      /* ---------- daftar tanggal rawan (pelengkap vonis) ---------- */
       if (bahaya.length) {
         root.appendChild(el('div', { class: 'alert alert-merah' }, [
           IK('alert', 17),
           el('div', null, [
             el('div', { html: '<b>' + bahaya.length + ' hari' + (adaProyeksi ? ' ke depan' : '') +
-              '</b> saldo menembus ambang bahaya ' + UI.rpS(cfg().ambangBahaya) +
-              ' pada skenario <b>' + aktif.skenario.nama + '</b>. Terparah <b>' +
-              UI.rpS(terendah.saldo) + '</b> di ' + UI.tglPanjang(terendah.tgl) +
-              ' (' + UI.relatif(terendah.tgl, global.APP.hariIni) + ').' }),
+              '</b> di bawah batas aman. Klik tanggal untuk lihat penyebabnya:' }),
             el('div', { class: 'chip-baris' }, bahaya.slice(0, 10).map(function (h) {
               return el('button', { class: 'chip chip-merah', type: 'button',
                 onclick: function () { detailHari(h, aktif); } }, [
@@ -179,17 +188,11 @@
               text: 'Catatan: ' + lalu.length + ' hari yang sudah lewat juga di bawah ambang — itu sudah terjadi, tidak perlu ditindaklanjuti.' }) : null
           ])
         ]));
-      } else {
-        root.appendChild(el('div', { class: 'alert alert-hijau' }, [
-          IK('shield', 17),
-          el('div', null, [
-            el('div', { html: 'Tidak ada tanggal' + (adaProyeksi ? ' ke depan' : '') +
-              ' yang menembus ambang bahaya di skenario <b>' + aktif.skenario.nama +
-              '</b>. Titik terendah <b>' + UI.rpS(terendah ? terendah.saldo : 0) + '</b> (' +
-              (terendah ? UI.tglPanjang(terendah.tgl) : '—') + ').' }),
-            lalu.length ? el('div', { class: 'muted2', style: 'margin-top:5px',
-              text: lalu.length + ' hari yang sudah lewat sempat di bawah ambang.' }) : null
-          ])
+      } else if (lalu.length) {
+        root.appendChild(el('div', { class: 'alert alert-biru' }, [
+          IK('info', 17),
+          el('div', { text: lalu.length + ' hari yang sudah lewat sempat di bawah batas aman. ' +
+            'Ke depan tidak ada lagi di skenario ' + aktif.skenario.nama + '.' })
         ]));
       }
 
@@ -222,25 +225,8 @@
         ]));
       }
 
-      /* ---------- chart ---------- */
-      var plotWrap = el('div');
-      root.appendChild(el('section', { class: 'kartu' }, [
-        el('div', { class: 'kartu-head' }, [
-          el('div', { class: 'kartu-judul' }, [
-            el('h2', { text: 'Saldo harian · ' + UI.tglPanjang(f.dari) + ' – ' + UI.tglPanjang(f.sampai) }),
-            el('p', { class: 'muted', text: cut
-              ? 'Garis solid = aktual s/d ' + UI.tglPanjang(cut) + ', lalu proyeksi 3 skenario. Klik atau sentuh grafik untuk rincian per tanggal.'
-              : 'Belum ada data aktual — seluruh garis adalah proyeksi.' })
-          ])
-        ]),
-        plotWrap
-      ]));
-
-      CHART.saldoHarian(plotWrap, {
-        hasil: hasil, aktif: f.skenario, cfg: cfg(), tinggi: 400,
-        onKlikHari: function (h) { detailHari(h, aktif); }
-      });
-      plotWrap.appendChild(CHART.legenda());
+      /* ---------- chart dengan pilihan tampilan ---------- */
+      root.appendChild(panelGrafik(hasil, aktif, ulang));
 
       /* ---------- 3 kartu skenario ---------- */
       var g3 = el('div', { class: 'grid g3' });
@@ -281,6 +267,205 @@
       root.appendChild(agendaKas(aktif, ulang));
     }
   };
+
+  /* ======================================================================
+     VONIS — kesimpulan satu kalimat untuk pembaca non-teknis (komisaris).
+     Ini yang dibaca duluan; grafik cuma buktinya.
+     ====================================================================== */
+  function vonis(hasil, c) {
+    var r = hasil.ringkas;
+    var t = r.terendahProyeksi || r.terendah;
+    if (!t) return null;
+
+    var ambang = Number(c.ambangBahaya) || 0;
+    var rw = E.runway(hasil.hari, r.saldoAkhir);
+    var netPeriode = r.masukProyeksi - r.keluarProyeksi;
+
+    var level, judul, pesan;
+    if (t.saldo < 0) {
+      level = 'kritis';
+      judul = 'Kas akan minus ' + UI.rpS(Math.abs(t.saldo)) + ' di ' + UI.tglPanjang(t.tgl);
+      pesan = 'Butuh dana talangan minimal ' + UI.rpS(Math.abs(t.saldo)) +
+              ' sebelum tanggal itu, atau geser pembayaran besar yang jatuh di sekitarnya.';
+    } else if (ambang && t.saldo < ambang) {
+      level = 'bahaya';
+      judul = 'Kas menipis ke ' + UI.rpS(t.saldo) + ' di ' + UI.tglPanjang(t.tgl);
+      pesan = 'Di bawah batas aman ' + UI.rpS(ambang) + ' (kurang ' + UI.rpS(ambang - t.saldo) + '). ' +
+              'Aman kalau penerimaan tepat waktu, tapi tidak ada bantalan kalau meleset.';
+    } else {
+      level = 'aman';
+      judul = 'Kas aman sepanjang periode';
+      pesan = 'Titik terendah ' + UI.rpS(t.saldo) + ' di ' + UI.tglPanjang(t.tgl) +
+              (ambang ? ', masih ' + UI.rpS(t.saldo - ambang) + ' di atas batas aman.' : '.');
+    }
+
+    /* kesehatan kas = % hari (yang belum lewat) yang saldonya di atas batas aman */
+    var proy = hasil.hari.filter(function (h) { return h.tipe === 'proyeksi'; });
+    var basis = proy.length ? proy : hasil.hari;
+    var aman = basis.filter(function (h) { return h.saldo >= (ambang || 0); }).length;
+    var sehat = basis.length ? Math.round(aman / basis.length * 100) : 100;
+
+    return {
+      level: level, judul: judul, pesan: pesan,
+      net: netPeriode, runway: rw, skenario: hasil.skenario.nama, sehat: sehat
+    };
+  }
+
+  function kartuVonis(v, ulang) {
+    var ikon = { kritis: 'alert', bahaya: 'alert', aman: 'shield' }[v.level];
+    var warnaGauge = { kritis: '#e11d48', bahaya: '#d97706', aman: '#059669' }[v.level];
+    var baris = [];
+
+    baris.push(el('div', { class: 'vonis-judul', text: v.judul }));
+    baris.push(el('p', { class: 'vonis-pesan', text: v.pesan }));
+
+    var fakta = el('div', { class: 'vonis-fakta' });
+    fakta.appendChild(el('div', { class: 'vf' }, [
+      el('span', { class: 'vf-lbl', text: 'Arus kas periode ini' }),
+      el('span', { class: 'vf-val ' + (v.net >= 0 ? 'hijau' : 'merah'),
+        text: (v.net >= 0 ? 'Surplus ' : 'Defisit ') + UI.rpS(Math.abs(v.net)) })
+    ]));
+    if (v.runway) {
+      fakta.appendChild(el('div', { class: 'vf' }, [
+        el('span', { class: 'vf-lbl', text: 'Kas bertahan tanpa pemasukan' }),
+        el('span', { class: 'vf-val', text: v.runway.hari >= 999 ? '> 2 tahun' : v.runway.hari + ' hari' })
+      ]));
+      fakta.appendChild(el('div', { class: 'vf' }, [
+        el('span', { class: 'vf-lbl', text: 'Rata-rata keluar / hari' }),
+        el('span', { class: 'vf-val', text: UI.rpS(v.runway.burnHarian) })
+      ]));
+    }
+    fakta.appendChild(el('div', { class: 'vf' }, [
+      el('span', { class: 'vf-lbl', text: 'Dasar perhitungan' }),
+      el('span', { class: 'vf-val', text: 'Skenario ' + v.skenario })
+    ]));
+    baris.push(fakta);
+
+    var gaugeNode = el('div', { class: 'vonis-gauge' }, [
+      global.CHARTB.gauge(v.sehat, { warna: warnaGauge, label: 'hari aman' }),
+      el('div', { class: 'vonis-gauge-cap', text: 'Kesehatan kas' })
+    ]);
+
+    return el('section', { class: 'vonis vonis-' + v.level }, [
+      el('div', { class: 'vonis-ikon' }, IK(ikon, 20)),
+      el('div', { class: 'vonis-isi' }, baris),
+      gaugeNode
+    ]);
+  }
+
+  /* ======================================================================
+     PANEL GRAFIK — satu grafik menjawab satu pertanyaan.
+     ====================================================================== */
+  var TAMPILAN = [
+    { id: 'saldo',    label: 'Saldo kas',      ikon: 'trending',  tanya: 'Kas kita aman nggak, dan kapan paling tipis?' },
+    { id: 'arus',     label: 'Masuk vs keluar', ikon: 'chart',    tanya: 'Berapa masuk, berapa keluar, surplus atau defisit?' },
+    { id: 'komposisi',label: 'Komposisi keluar', ikon: 'grid',    tanya: 'Uangnya lari ke mana?' },
+    { id: 'jembatan', label: 'Jembatan saldo',  ikon: 'scale',    tanya: 'Kenapa saldo akhir jadi segitu?' }
+  ];
+  var GRAIN = [
+    { id: 'harian',   label: 'Harian' },
+    { id: 'mingguan', label: 'Mingguan' },
+    { id: 'bulanan',  label: 'Bulanan' }
+  ];
+
+  function panelGrafik(hasil, aktif, ulang) {
+    var APP = global.APP;
+    if (!APP.tampilanGrafik) APP.tampilanGrafik = 'saldo';
+    /* default grain ikut panjang periode: 1 bulan → harian, >3 bulan → bulanan */
+    if (!APP.grain) APP.grain = aktif.hari.length > 92 ? 'bulanan' : (aktif.hari.length > 45 ? 'mingguan' : 'harian');
+
+    var tampilan = TAMPILAN.filter(function (t) { return t.id === APP.tampilanGrafik; })[0] || TAMPILAN[0];
+    var plotWrap = el('div', { class: 'plot-slot' });
+
+    /* pemilih tampilan */
+    var pilihTampilan = el('div', { class: 'grafik-tab', role: 'tablist' });
+    TAMPILAN.forEach(function (t) {
+      pilihTampilan.appendChild(el('button', {
+        class: 'gt-btn' + (t.id === APP.tampilanGrafik ? ' aktif' : ''), type: 'button',
+        role: 'tab', 'aria-selected': t.id === APP.tampilanGrafik, title: t.tanya,
+        onclick: function () { APP.tampilanGrafik = t.id; ulang(); }
+      }, [IK(t.ikon, 14), el('span', { text: t.label })]));
+    });
+
+    /* pemilih rentang waktu — tidak relevan untuk donat */
+    var pilihGrain = el('div', { class: 'segmen segmen-mini' });
+    GRAIN.forEach(function (g) {
+      pilihGrain.appendChild(el('button', {
+        class: 'segmen-btn' + (g.id === APP.grain ? ' aktif' : ''), type: 'button',
+        onclick: function () { APP.grain = g.id; ulang(); }
+      }, el('span', { text: g.label })));
+    });
+
+    var kepala = el('div', { class: 'kartu-head' }, [
+      el('div', { class: 'kartu-judul' }, [
+        el('h2', { text: tampilan.label }),
+        el('p', { class: 'muted', text: tampilan.tanya })
+      ]),
+      el('div', { class: 'kartu-aksi' }, [
+        (tampilan.id === 'komposisi' || tampilan.id === 'jembatan') ? null : pilihGrain
+      ])
+    ]);
+
+    var kartu = el('section', { class: 'kartu' }, [pilihTampilan, kepala, plotWrap]);
+
+    /* ---- gambar sesuai tampilan ---- */
+    var grain = APP.grain;
+    var seri = {};
+    CFG.SKENARIO.forEach(function (sk) { seri[sk.id] = E.agregasi(hasil[sk.id].hari, grain); });
+    var dataAktif = seri[APP.filter.skenario];
+
+    if (tampilan.id === 'saldo') {
+      global.CHARTB.garisSaldo(plotWrap, {
+        seri: seri, aktif: APP.filter.skenario, grain: grain, cfg: cfg(), tinggi: 380,
+        semuaSkenario: true,
+        onKlik: function (p) { if (p.hari && p.hari.length === 1) detailHari(p.hari[0], aktif); }
+      });
+      plotWrap.appendChild(el('div', { class: 'legend' }, el('div', { class: 'legend-grup' }, [
+        el('span', { class: 'lg-line lg-solid' }), el('span', { text: 'Aktual' }),
+        el('span', { class: 'lg-line lg-dash' }), el('span', { text: 'Proyeksi (skenario aktif)' }),
+        el('span', { class: 'lg-line lg-dot-pink' }), el('span', { text: 'Batas aman' }),
+        el('span', { class: 'muted2', text: '· area merah = zona bahaya' })
+      ])));
+
+    } else if (tampilan.id === 'arus') {
+      global.CHARTB.batangArus(plotWrap, { data: dataAktif, grain: grain, tinggi: 340 });
+
+    } else if (tampilan.id === 'komposisi') {
+      var perBucket = {};
+      aktif.hari.forEach(function (h) {
+        for (var b in h.bucket) {
+          if (!h.bucket.hasOwnProperty(b) || b === 'pemasukan') continue;
+          perBucket[b] = (perBucket[b] || 0) + h.bucket[b];
+        }
+      });
+      var dataDonat = Object.keys(perBucket).map(function (b) {
+        return { label: CFG.BUCKET[b] ? CFG.BUCKET[b].label : b, nilai: perBucket[b],
+                 warna: CFG.BUCKET[b] ? CFG.BUCKET[b].warna : '#94a3b8' };
+      });
+      global.CHARTB.donatKeluar(plotWrap, { data: dataDonat });
+
+    } else {
+      /* jembatan: saldo awal → +penerimaan → −tiap bucket → saldo akhir */
+      var r = aktif.ringkas;
+      var bucketOut = {};
+      aktif.hari.forEach(function (h) {
+        for (var b in h.bucket) {
+          if (!h.bucket.hasOwnProperty(b) || b === 'pemasukan') continue;
+          bucketOut[b] = (bucketOut[b] || 0) + h.bucket[b];
+        }
+      });
+      var langkah = [{ label: 'Saldo awal', nilai: r.saldoAwal, jenis: 'total' }];
+      langkah.push({ label: 'Penerimaan', nilai: r.totalMasuk });
+      Object.keys(bucketOut).sort(function (a, b) { return bucketOut[b] - bucketOut[a]; })
+        .forEach(function (b) {
+          langkah.push({ label: CFG.BUCKET[b] ? CFG.BUCKET[b].label : b, nilai: -bucketOut[b] });
+        });
+      langkah.push({ label: 'Saldo akhir', nilai: r.saldoAkhir, jenis: 'total' });
+      global.CHARTB.jembatan(plotWrap, { data: langkah, tinggi: 380 });
+    }
+
+    return kartu;
+  }
 
   /* Bandingkan rata-rata penerimaan harian aktual vs proyeksi. */
   function kalibrasi(hasil) {

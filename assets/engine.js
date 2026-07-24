@@ -569,6 +569,67 @@
     };
   }
 
+  /* ==========================================================================
+     AGREGASI — kelompokkan hasil harian jadi mingguan / bulanan.
+     Melihat 6 bulan dalam 180 titik harian itu tidak terbaca; komisaris butuh
+     ~6–12 titik. Saldo diambil dari hari TERAKHIR periode (saldo itu posisi,
+     bukan arus, jadi tidak boleh dijumlah). Arus (masuk/keluar) dijumlah.
+     ========================================================================== */
+  function agregasi(hari, grain) {
+    if (!hari.length) return [];
+
+    if (grain === 'harian' || !grain) {
+      return hari.map(function (h) {
+        return {
+          key: h.tgl, tglAwal: h.tgl, tglAkhir: h.tgl,
+          masuk: h.masuk, keluar: h.keluar, net: h.net,
+          saldo: h.saldo, saldoAwal: h.saldo - h.masuk + h.keluar,
+          tipe: h.tipe, bucket: h.bucket, hari: [h],
+          detailKeluar: h.detailKeluar, detailMasuk: h.detailMasuk
+        };
+      });
+    }
+
+    var grup = [], kini = null, i;
+    for (i = 0; i < hari.length; i++) {
+      var h = hari[i];
+      var kunci = (grain === 'bulanan') ? bulanKey(h.tgl) : 'w' + Math.floor(i / 7);
+      if (!kini || kini.key !== kunci) {
+        kini = {
+          key: kunci, tglAwal: h.tgl, tglAkhir: h.tgl,
+          masuk: 0, keluar: 0, net: 0, saldo: 0,
+          saldoAwal: h.saldo - h.masuk + h.keluar,
+          tipe: h.tipe, bucket: {}, hari: [], detailKeluar: {}, detailMasuk: {}
+        };
+        grup.push(kini);
+      }
+      kini.tglAkhir = h.tgl;
+      kini.masuk += h.masuk;
+      kini.keluar += h.keluar;
+      kini.saldo = h.saldo;                       /* posisi akhir periode */
+      kini.hari.push(h);
+      if (h.tipe === 'proyeksi') kini.tipe = 'proyeksi';   /* campuran → proyeksi */
+
+      var k;
+      for (k in h.bucket) if (h.bucket.hasOwnProperty(k)) kini.bucket[k] = (kini.bucket[k] || 0) + h.bucket[k];
+      for (k in h.detailKeluar) if (h.detailKeluar.hasOwnProperty(k)) kini.detailKeluar[k] = (kini.detailKeluar[k] || 0) + h.detailKeluar[k];
+      for (k in h.detailMasuk) if (h.detailMasuk.hasOwnProperty(k)) kini.detailMasuk[k] = (kini.detailMasuk[k] || 0) + h.detailMasuk[k];
+    }
+    grup.forEach(function (g) { g.net = g.masuk - g.keluar; });
+    return grup;
+  }
+
+  /* Runway: berapa hari kas bertahan kalau penerimaan berhenti total.
+     Metrik klasik buat board — "kalau jualan mandek, kita kuat berapa lama". */
+  function runway(hari, saldoSekarang) {
+    var proy = hari.filter(function (h) { return h.tipe === 'proyeksi'; });
+    if (!proy.length) return null;
+    var totalKeluar = proy.reduce(function (a, h) { return a + h.keluar; }, 0);
+    var perHari = totalKeluar / proy.length;
+    if (perHari <= 0) return null;
+    return { hari: Math.floor(saldoSekarang / perHari), burnHarian: Math.round(perHari) };
+  }
+
   /* Hitung ketiga skenario sekaligus (buat chart 3 garis) */
   function hitungSemua(data, opts) {
     var out = {}, i;
@@ -607,6 +668,7 @@
     petaGmv: petaGmv, targetBulananChannel: targetBulananChannel, masterChannel: masterChannel,
     cutoffAktual: cutoffAktual, saldoAktualPada: saldoAktualPada, hitungBaseline: hitungBaseline,
     petaRencana: petaRencana, coaBerencana: coaBerencana,
-    hitung: hitung, hitungSemua: hitungSemua, omsetBulanan: omsetBulanan
+    hitung: hitung, hitungSemua: hitungSemua, omsetBulanan: omsetBulanan,
+    agregasi: agregasi, runway: runway
   };
 })(window);

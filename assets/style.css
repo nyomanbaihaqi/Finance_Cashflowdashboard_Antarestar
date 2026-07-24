@@ -205,7 +205,11 @@ button { font-family: inherit; }
   font-size: 25px; font-weight: 800; letter-spacing: -.025em; margin-top: 7px;
   font-variant-numeric: tabular-nums; line-height: 1.15;
 }
-.kpi-sub { font-size: 11.5px; color: var(--teks3); margin-top: 4px; line-height: 1.45; }
+.kpi-sub { font-size: 11.5px; color: var(--teks3); line-height: 1.45; }
+.kpi-kaki { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-top: 5px; }
+.kpi-kaki .kpi-sub { flex: 1; min-width: 0; }
+.kpi-spark { flex: none; opacity: .9; }
+.spark { display: block; overflow: visible; }
 
 /* -------------------------------------------------------------- tombol */
 .btn {
@@ -449,6 +453,9 @@ textarea.inp { min-height: 130px; resize: vertical; font-family: var(--mono); fo
 /* sel target yang belum diisi: kosong, cuma placeholder saran yang samar & miring
    supaya jelas angkanya belum masuk hitungan */
 .sel-kosong::placeholder { color: #cbd5e1; font-style: italic; font-weight: 400; }
+/* sel yang isinya berasal dari jadwal harian (mis. hasil impor) */
+.sel-harian { color: var(--biru); font-weight: 650; background: #eff6ff; }
+.sel-harian:hover:not(:disabled) { background: #dbeafe; }
 .sel-kotak { border-color: var(--garis); background: #fff; text-align: right; }
 .sel-status { padding: 4px 24px 4px 9px; font-size: 11.5px; font-weight: 700; border-radius: 999px; width: auto; background-position: right 6px center; }
 .sel-status.sel-hijau  { background-color: #d1fae5; color: #047857; border-color: #a7f3d0; }
@@ -692,6 +699,82 @@ textarea.inp { min-height: 130px; resize: vertical; font-family: var(--mono); fo
 .cek-kotak:disabled { cursor: not-allowed; opacity: .4; }
 .tabel tr.baris-redup td { opacity: .5; }
 .tabel tr.baris-redup td:first-child, .tabel tr.baris-redup td:nth-child(4) { opacity: 1; }
+
+/* ---------------------------------------------------- vonis / kesimpulan */
+.vonis {
+  display: flex; gap: 15px; align-items: flex-start; padding: 17px 19px;
+  border-radius: var(--r-l); border: 1px solid var(--garis); background: var(--panel);
+  box-shadow: var(--bayang-2);
+}
+.vonis-ikon {
+  width: 40px; height: 40px; border-radius: 12px; flex: none;
+  display: grid; place-items: center;
+}
+.vonis-isi { flex: 1; min-width: 0; }
+.vonis-judul { font-size: 17px; font-weight: 800; letter-spacing: -.015em; line-height: 1.3; }
+.vonis-pesan { font-size: 13px; color: var(--teks2); margin-top: 5px; line-height: 1.55; max-width: 78ch; }
+.vonis-fakta {
+  display: flex; gap: 26px; flex-wrap: wrap; margin-top: 13px;
+  padding-top: 12px; border-top: 1px solid var(--garis2);
+}
+.vf { display: flex; flex-direction: column; gap: 2px; }
+.vf-lbl { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--teks3); font-weight: 700; }
+.vf-val { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.vonis-aman   { border-color: #a7f3d0; background: linear-gradient(180deg, #f0fdf9, #fff 60%); }
+.vonis-aman .vonis-ikon { background: #d1fae5; color: #047857; }
+.vonis-aman .vonis-judul { color: #065f46; }
+.vonis-bahaya { border-color: #fde68a; background: linear-gradient(180deg, #fffbeb, #fff 60%); }
+.vonis-bahaya .vonis-ikon { background: #fef3c7; color: #b45309; }
+.vonis-bahaya .vonis-judul { color: #92400e; }
+.vonis-kritis { border-color: #fecdd3; background: linear-gradient(180deg, #fff1f2, #fff 60%); }
+.vonis-kritis .vonis-ikon { background: #ffe4e6; color: #be123c; }
+.vonis-kritis .vonis-judul { color: #9f1239; }
+
+.vonis-gauge { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; align-self: center; }
+.vonis-gauge-cap { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--teks3); font-weight: 700; }
+.gauge { display: block; }
+.gauge-val { font-size: 21px; font-weight: 800; fill: var(--teks); font-family: var(--font); }
+.gauge-lbl { font-size: 9px; fill: var(--teks3); font-family: var(--font); letter-spacing: .04em; text-transform: uppercase; font-weight: 700; }
+@media (max-width: 880px) { .vonis { flex-wrap: wrap; } .vonis-gauge { order: 3; width: 100%; margin-top: 8px; } }
+
+/* -------------------------------------------------- pemilih jenis grafik */
+.grafik-tab {
+  display: flex; gap: 4px; flex-wrap: wrap; margin: -3px 0 15px;
+  border-bottom: 1px solid var(--garis); padding-bottom: 0;
+}
+.gt-btn {
+  display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px;
+  border: 0; border-bottom: 2px solid transparent; background: none; cursor: pointer;
+  font-size: 13px; font-weight: 600; color: var(--teks3); transition: all var(--cepat);
+  margin-bottom: -1px;
+}
+.gt-btn:hover { color: var(--teks); background: var(--panel2); border-radius: var(--r-s) var(--r-s) 0 0; }
+.gt-btn.aktif { color: var(--aksen); border-bottom-color: var(--aksen); }
+.segmen-mini .segmen-btn { padding: 5px 11px; font-size: 12px; }
+.plot-slot { min-height: 200px; }
+.titik-label { font-size: 10.5px; font-weight: 700; font-family: var(--font); }
+.bar-net { font-size: 10.5px; font-weight: 700; font-family: var(--font); }
+.ax-tag { fill: #b3bfd0; font-size: 9px; font-family: var(--font); }
+
+/* --------------------------------------------------------------- donat */
+.donat-wrap { display: flex; gap: 26px; align-items: center; flex-wrap: wrap; }
+.donat-svg { flex: none; }
+.donat-potong { cursor: pointer; transition: opacity var(--cepat); }
+.donat-potong:hover { opacity: .82; }
+.donat-total { font-size: 17px; font-weight: 800; fill: var(--teks); font-family: var(--font); }
+.donat-label { font-size: 10px; fill: var(--teks3); font-family: var(--font);
+  letter-spacing: .06em; text-transform: uppercase; font-weight: 700; }
+.donat-legend { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 2px; }
+.dl-baris {
+  display: flex; align-items: center; gap: 10px; padding: 7px 9px; border-radius: 8px;
+  font-size: 13px; transition: background var(--cepat);
+}
+.dl-baris:hover { background: var(--panel2); }
+.dl-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.dl-nama { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-persen { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--teks2); min-width: 48px; text-align: right; }
+.dl-nilai { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 88px; text-align: right; }
 
 /* ------------------------------------------------ cashflow harian matrix */
 .cf-wrap { max-height: 72vh; overflow: auto; }

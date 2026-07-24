@@ -288,6 +288,7 @@
   }
 
   /* -------------------------------------------------------- komponen */
+  /* o.spark : node SVG tren mini (opsional) ditaruh di kanan bawah kartu */
   function kartuKpi(o) {
     return el('div', { class: 'kpi' + (o.onKlik ? ' kpi-klik' : ''), onclick: o.onKlik || null }, [
       el('div', { class: 'kpi-head' }, [
@@ -296,7 +297,10 @@
           global.IK(o.ikon, 15)) : null
       ]),
       el('div', { class: 'kpi-nilai', text: o.nilai }),
-      o.sub ? el('div', { class: 'kpi-sub ' + (o.subKelas || ''), html: o.sub }) : null
+      el('div', { class: 'kpi-kaki' }, [
+        o.sub ? el('div', { class: 'kpi-sub ' + (o.subKelas || ''), html: o.sub }) : el('span'),
+        o.spark ? el('div', { class: 'kpi-spark' }, o.spark) : null
+      ])
     ]);
   }
 
