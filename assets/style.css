@@ -509,6 +509,8 @@ textarea.inp { min-height: 130px; resize: vertical; font-family: var(--mono); fo
 .plot { display: block; overflow: visible; touch-action: pan-y; }
 .grid { stroke: #eef2f7; stroke-width: 1; }
 .ax-y { fill: #94a3b8; font-size: 10.5px; text-anchor: end; font-family: var(--font); }
+.ax-y-kanan { text-anchor: start; }
+.ax-judul { fill: #b3bfd0; font-size: 9px; font-weight: 700; letter-spacing: .07em; font-family: var(--font); }
 .ax-x { fill: #94a3b8; font-size: 10.5px; font-family: var(--font); }
 .ambang { stroke: #f43f5e; stroke-width: 1.4; stroke-dasharray: 3 4; opacity: .8; }
 .ambang-label { fill: #e11d48; font-size: 10.5px; font-weight: 600; font-family: var(--font); }
@@ -737,6 +739,82 @@ textarea.inp { min-height: 130px; resize: vertical; font-family: var(--mono); fo
 .gauge-val { font-size: 21px; font-weight: 800; fill: var(--teks); font-family: var(--font); }
 .gauge-lbl { font-size: 9px; fill: var(--teks3); font-family: var(--font); letter-spacing: .04em; text-transform: uppercase; font-weight: 700; }
 @media (max-width: 880px) { .vonis { flex-wrap: wrap; } .vonis-gauge { order: 3; width: 100%; margin-top: 8px; } }
+
+/* ------------------------------------------------- blok "kenapa turun" */
+.sebab { border: 1px solid var(--garis); border-radius: var(--r-m); overflow: hidden; margin: 14px 0; }
+.sebab-turun { border-color: #fecdd3; }
+.sebab-naik { border-color: #a7f3d0; }
+.sebab-head {
+  display: flex; align-items: center; gap: 8px; padding: 9px 13px;
+  font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+}
+.sebab-turun .sebab-head { background: var(--merah-bg); color: #9f1239; }
+.sebab-naik .sebab-head { background: var(--hijau-bg); color: #065f46; }
+.sebab-isi { padding: 12px 13px; }
+.sebab-ringkas { font-size: 13px; line-height: 1.6; color: var(--teks); }
+.sebab-list { display: flex; flex-direction: column; gap: 4px; margin-top: 11px; }
+.sebab-item {
+  position: relative; display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 8px; background: var(--panel2); font-size: 12.5px; overflow: hidden;
+}
+.sebab-bar { position: absolute; left: 0; top: 0; bottom: 0; background: #fee2e2; z-index: 0; }
+.sebab-item.berat .sebab-bar { background: #fecdd3; }
+.sebab-item > *:not(.sebab-bar) { position: relative; z-index: 1; }
+.sebab-nama { flex: 1; min-width: 0; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sebab-nom { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sebab-ket { color: var(--teks2); font-size: 11px; white-space: nowrap; }
+.sebab-kaki { font-size: 12px; color: var(--teks2); margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--garis2); }
+
+.vonis-sebab {
+  display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap;
+  margin-top: 11px; padding: 10px 12px; border-radius: var(--r-m);
+  background: rgba(255,255,255,.72); border: 1px solid var(--garis);
+}
+.vs-lbl {
+  font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 800;
+  color: var(--teks3); padding-top: 3px; flex: none;
+}
+.vs-teks { flex: 1; min-width: 200px; font-size: 12.5px; line-height: 1.55; color: var(--teks2); }
+.vs-teks b { color: var(--teks); }
+
+@media (max-width: 880px) {
+  .sebab-item { flex-wrap: wrap; }
+  .sebab-ket { width: 100%; white-space: normal; }
+}
+
+/* --------------------------------------------------- kartu isi sisa kas */
+.isi-saldo {
+  display: flex; gap: 15px; align-items: flex-start; padding: 17px 19px;
+  border-radius: var(--r-l); border: 1.5px solid #fed7aa;
+  background: linear-gradient(180deg, var(--aksen-bg), #fff 65%); box-shadow: var(--bayang-2);
+}
+.isi-saldo-ikon {
+  width: 40px; height: 40px; border-radius: 12px; flex: none; display: grid; place-items: center;
+  background: #ffedd5; color: var(--aksen);
+}
+.isi-saldo-isi { flex: 1; min-width: 0; }
+.isi-saldo-judul { font-size: 16px; font-weight: 800; letter-spacing: -.015em; color: #9a3412; }
+.isi-saldo-pesan { font-size: 12.5px; color: var(--teks2); margin-top: 4px; line-height: 1.55; max-width: 76ch; }
+.isi-saldo-form {
+  grid-template-columns: 190px 240px auto; align-items: end;
+  margin-top: 13px; padding-top: 13px; border-top: 1px solid rgba(234,88,12,.18);
+}
+@media (max-width: 880px) {
+  .isi-saldo { flex-wrap: wrap; }
+  .isi-saldo-form { grid-template-columns: 1fr !important; }
+}
+
+/* ------------------------------------------------ saklar garis (on/off) */
+.garis-saklar { display: inline-flex; gap: 5px; flex-wrap: wrap; }
+.gs-btn {
+  display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px;
+  border: 1px solid var(--garis); background: #fff; border-radius: 999px;
+  font-size: 12px; font-weight: 600; color: var(--teks3); cursor: pointer;
+  transition: all var(--cepat);
+}
+.gs-btn:hover { border-color: #cbd5e1; color: var(--teks2); }
+.gs-btn.aktif { color: var(--teks); border-color: #cbd5e1; background: var(--panel2); }
+.gs-dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid; flex: none; }
 
 /* -------------------------------------------------- pemilih jenis grafik */
 .grafik-tab {

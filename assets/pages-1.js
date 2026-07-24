@@ -117,6 +117,9 @@
         pilSkenario(hasil, ulang)
       ]));
 
+      /* Belum ada saldo awal → jangan tebak-tebakan, minta angkanya langsung. */
+      if (!(Number(cfg().saldoAwal) > 0)) root.appendChild(kartuIsiSaldo(f, ulang));
+
       /* ---------- vonis: kesimpulan dulu, grafik belakangan ---------- */
       var v = vonis(aktif, cfg());
       if (v) root.appendChild(kartuVonis(v, ulang));
@@ -269,6 +272,55 @@
   };
 
   /* ======================================================================
+     KARTU ISI SISA KAS — pengganti upload file.
+     Titik pijak seluruh proyeksi: sisa kas di akhir bulan terakhir yang sudah
+     ditutup. Tanpa ini semua angka saldo tidak berarti, jadi formulirnya
+     ditaruh langsung di halaman, bukan disembunyikan di Pengaturan.
+     ====================================================================== */
+  function kartuIsiSaldo(f, ulang) {
+    /* default: hari terakhir bulan sebelum periode yang sedang dilihat */
+    var tglDefault = E.tambahHari(f.dari, -1);
+
+    var inTgl = UI.input({ type: 'date', value: tglDefault });
+    var inNominal = UI.inputUang(0);
+    var fNominal = UI.field('Sisa kas di tanggal itu', inNominal,
+      'Total semua rekening + kas di tangan. Bisa singkat: 4,5m · 850jt', { wajib: true });
+
+    function simpan() {
+      UI.bersihkanSalah(kartu);
+      var nom = UI.nilaiUang(inNominal);
+      if (!inTgl.value) { UI.toast('Tanggal belum diisi', 'warn'); return; }
+      if (!nom) { UI.salahField(fNominal, 'Nominal belum diisi'); return; }
+      S.simpanConfig({ saldoAwal: nom, saldoAwalTanggal: inTgl.value }).then(function () {
+        UI.toast('Sisa kas ' + UI.rpS(nom) + ' per ' + UI.tglPendek(inTgl.value) + ' tersimpan', 'sukses');
+        ulang();
+      });
+    }
+
+    var form = el('div', { class: 'form-grid isi-saldo-form' }, [
+      UI.field('Posisi kas per tanggal', inTgl, 'Biasanya hari terakhir bulan lalu'),
+      fNominal,
+      el('div', { class: 'field field-tombol' },
+        UI.btn('Simpan', { gaya: 'btn-utama', ikon: 'check', onKlik: simpan }))
+    ]);
+    form.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); simpan(); }
+    });
+
+    var kartu = el('section', { class: 'isi-saldo' }, [
+      el('div', { class: 'isi-saldo-ikon' }, IK('wallet', 20)),
+      el('div', { class: 'isi-saldo-isi' }, [
+        el('div', { class: 'isi-saldo-judul', text: 'Isi sisa kas dulu supaya angkanya berarti' }),
+        el('p', { class: 'isi-saldo-pesan',
+          text: 'Semua proyeksi berangkat dari satu angka: sisa kas di akhir bulan terakhir yang sudah ditutup. ' +
+                'Selama ini kosong, saldo dihitung mulai dari nol — pola naik-turunnya tetap benar, tapi posisinya belum.' }),
+        form
+      ])
+    ]);
+    return kartu;
+  }
+
+  /* ======================================================================
      VONIS — kesimpulan satu kalimat untuk pembaca non-teknis (komisaris).
      Ini yang dibaca duluan; grafik cuma buktinya.
      ====================================================================== */
@@ -307,7 +359,8 @@
 
     return {
       level: level, judul: judul, pesan: pesan,
-      net: netPeriode, runway: rw, skenario: hasil.skenario.nama, sehat: sehat
+      net: netPeriode, runway: rw, skenario: hasil.skenario.nama, sehat: sehat,
+      titik: t, hasil: hasil
     };
   }
 
@@ -318,6 +371,26 @@
 
     baris.push(el('div', { class: 'vonis-judul', text: v.judul }));
     baris.push(el('p', { class: 'vonis-pesan', text: v.pesan }));
+
+    /* penyebab titik terendah — langsung ditampilkan, tidak perlu diklik */
+    if (v.titik && v.hasil) {
+      var an = E.analisaHari(v.hasil, v.titik.tgl);
+      var n = narasiPenyebab(an);
+      if (n) {
+        var utama = n.poin.filter(function (p) { return p.berat; })[0] || n.poin[0];
+        baris.push(el('div', { class: 'vonis-sebab' }, [
+          el('span', { class: 'vs-lbl', text: 'Penyebab' }),
+          el('span', { class: 'vs-teks' }, [
+            el('span', { text: n.ringkas }),
+            utama ? el('span', { text: ' Terbesar: ' }) : null,
+            utama ? el('b', { text: utama.nama + ' ' + UI.rpS(utama.nominal) }) : null,
+            utama ? el('span', { text: ' (' + utama.ket + ').' }) : null
+          ]),
+          UI.btn('Lihat rincian', { kecil: true, ikon: 'search',
+            onKlik: function () { detailHari(v.titik, v.hasil); } })
+        ]));
+      }
+    }
 
     var fakta = el('div', { class: 'vonis-fakta' });
     fakta.appendChild(el('div', { class: 'vf' }, [
@@ -415,17 +488,61 @@
     var dataAktif = seri[APP.filter.skenario];
 
     if (tampilan.id === 'saldo') {
+      if (!APP.garisTampil) APP.garisTampil = { saldo: true, masuk: false, keluar: false };
+      var gt = APP.garisTampil;
+
       global.CHARTB.garisSaldo(plotWrap, {
         seri: seri, aktif: APP.filter.skenario, grain: grain, cfg: cfg(), tinggi: 380,
-        semuaSkenario: true,
+        semuaSkenario: true, tampil: gt,
         onKlik: function (p) { if (p.hari && p.hari.length === 1) detailHari(p.hari[0], aktif); }
       });
-      plotWrap.appendChild(el('div', { class: 'legend' }, el('div', { class: 'legend-grup' }, [
-        el('span', { class: 'lg-line lg-solid' }), el('span', { text: 'Aktual' }),
-        el('span', { class: 'lg-line lg-dash' }), el('span', { text: 'Proyeksi (skenario aktif)' }),
-        el('span', { class: 'lg-line lg-dot-pink' }), el('span', { text: 'Batas aman' }),
-        el('span', { class: 'muted2', text: '· area merah = zona bahaya' })
-      ])));
+
+      /* saklar garis — matikan/nyalakan sesuai kebutuhan; skala Y ikut yang aktif */
+      var GARIS = [
+        { id: 'saldo',  label: 'Saldo',       warna: aktif.skenario.warna },
+        { id: 'masuk',  label: 'Uang masuk',  warna: '#10b981' },
+        { id: 'keluar', label: 'Uang keluar', warna: '#e11d48' }
+      ];
+      var saklar = el('div', { class: 'garis-saklar' });
+      GARIS.forEach(function (g) {
+        var on = !!gt[g.id];
+        saklar.appendChild(el('button', {
+          class: 'gs-btn' + (on ? ' aktif' : ''), type: 'button',
+          'aria-pressed': on, title: (on ? 'Sembunyikan ' : 'Tampilkan ') + g.label,
+          onclick: function () {
+            var nyala = Object.keys(gt).filter(function (k) { return gt[k]; });
+            if (on && nyala.length === 1) { UI.toast('Minimal satu garis harus nyala', 'warn'); return; }
+            gt[g.id] = !on;
+            ulang();
+          }
+        }, [
+          el('span', { class: 'gs-dot', style: 'background:' + (on ? g.warna : 'transparent') +
+            ';border-color:' + g.warna }),
+          el('span', { text: g.label })
+        ]));
+      });
+
+      plotWrap.appendChild(el('div', { class: 'legend' }, [
+        el('div', { class: 'legend-grup' }, [
+          el('span', { class: 'legend-judul', text: 'GARIS:' }), saklar
+        ]),
+        (function () {
+          var adaArus = gt.masuk || gt.keluar;
+          if (gt.saldo && adaArus) {
+            return el('div', { class: 'legend-grup' }, el('span', { class: 'muted2',
+              text: 'Sumbu ganda — kiri: arus kas harian, kanan: saldo. Skenario pembanding disembunyikan biar tidak ramai.' }));
+          }
+          if (gt.saldo) {
+            return el('div', { class: 'legend-grup' }, [
+              el('span', { class: 'lg-line lg-solid' }), el('span', { text: 'Aktual' }),
+              el('span', { class: 'lg-line lg-dash' }), el('span', { text: 'Proyeksi (skenario aktif)' }),
+              el('span', { class: 'lg-line lg-dot-pink' }), el('span', { text: 'Batas aman' })
+            ]);
+          }
+          return el('div', { class: 'legend-grup' }, el('span', { class: 'muted2',
+            text: 'Saldo disembunyikan — sumbu menyesuaikan arus kas harian.' }));
+        })()
+      ]));
 
     } else if (tampilan.id === 'arus') {
       global.CHARTB.batangArus(plotWrap, { data: dataAktif, grain: grain, tinggi: 340 });
@@ -535,6 +652,77 @@
       }));
   }
 
+  /* Susun kalimat penyebab dari hasil E.analisaHari — dipakai di modal & vonis */
+  function narasiPenyebab(an) {
+    if (!an) return null;
+    var h = an.hari, poin = [];
+
+    var besar = an.pemicu.filter(function (p) { return p.nominal > 0; }).slice(0, 3);
+    besar.forEach(function (p) {
+      var ket = '';
+      if (p.jarang) ket = 'jarang keluar — cuma di tanggal tertentu';
+      else if (p.kali >= 1.6) ket = Math.round(p.kali * 10) / 10 + '× lebih besar dari hari biasa (' + UI.rpS(p.rataPos) + ')';
+      else ket = 'setara hari biasa';
+      poin.push({ nama: p.nama, nominal: p.nominal, porsi: p.porsi, ket: ket, berat: p.jarang || p.kali >= 1.6 });
+    });
+
+    var ringkas;
+    if (an.keluarBesar && an.masukSeret) {
+      ringkas = 'Kena dua-duanya: pengeluaran ' + UI.rpS(h.keluar) + ' (di atas rata-rata ' + UI.rpS(an.rataKeluar) +
+        ') sementara pemasukan cuma ' + UI.rpS(h.masuk) + ' (rata-rata ' + UI.rpS(an.rataMasuk) + ').';
+    } else if (an.keluarBesar) {
+      ringkas = 'Pengeluaran hari ini ' + UI.rpS(h.keluar) + ', di atas rata-rata harian ' + UI.rpS(an.rataKeluar) + '.';
+    } else if (an.masukSeret) {
+      ringkas = 'Pemasukan hari ini cuma ' + UI.rpS(h.masuk) + ', jauh di bawah rata-rata ' + UI.rpS(an.rataMasuk) +
+        ' — pengeluaran tetap jalan ' + UI.rpS(h.keluar) + '.';
+    } else if (an.hariBeruntunDefisit > 1) {
+      ringkas = 'Bukan karena satu hari — sudah ' + an.hariBeruntunDefisit + ' hari beruntun pengeluaran > pemasukan, ' +
+        'total tekor ' + UI.rpS(an.totalDefisitBeruntun) + '.';
+    } else {
+      ringkas = 'Pemasukan ' + UI.rpS(h.masuk) + ' vs pengeluaran ' + UI.rpS(h.keluar) + ' — masih dalam pola normal.';
+    }
+
+    return { ringkas: ringkas, poin: poin, an: an };
+  }
+
+  function blokPenyebab(an) {
+    var n = narasiPenyebab(an);
+    if (!n) return null;
+    var h = an.hari;
+    var turun = h.net < 0;
+
+    var isi = el('div', { class: 'sebab-isi' }, [
+      el('p', { class: 'sebab-ringkas', text: n.ringkas })
+    ]);
+
+    if (n.poin.length) {
+      var daftar = el('div', { class: 'sebab-list' });
+      n.poin.forEach(function (p) {
+        daftar.appendChild(el('div', { class: 'sebab-item' + (p.berat ? ' berat' : '') }, [
+          el('span', { class: 'sebab-bar', style: 'width:' + Math.max(4, Math.round(p.porsi * 100)) + '%' }),
+          el('span', { class: 'sebab-nama', text: p.nama }),
+          el('span', { class: 'sebab-nom', text: UI.rp(p.nominal) }),
+          el('span', { class: 'sebab-ket', text: p.ket })
+        ]));
+      });
+      isi.appendChild(daftar);
+    }
+
+    if (an.turunDariPuncak > 0 && an.puncak && an.puncak.tgl !== h.tgl) {
+      isi.appendChild(el('p', { class: 'sebab-kaki',
+        text: 'Dari puncak ' + UI.rpS(an.puncak.saldo) + ' di ' + UI.tglPendek(an.puncak.tgl) +
+              ', saldo sudah turun ' + UI.rpS(an.turunDariPuncak) + '.' }));
+    }
+
+    return el('div', { class: 'sebab ' + (turun ? 'sebab-turun' : 'sebab-naik') }, [
+      el('div', { class: 'sebab-head' }, [
+        IK(turun ? 'arrowDown' : 'arrowUp', 15),
+        el('span', { text: turun ? 'Kenapa saldo turun di tanggal ini' : 'Kenapa saldo di titik ini' })
+      ]),
+      isi
+    ]);
+  }
+
   /* ---------------------------------------------------- modal per hari */
   function detailHari(h, hasil) {
     var isi = el('div');
@@ -544,6 +732,11 @@
       UI.kartuKpi({ label: 'Uang masuk', nilai: UI.rpS(h.masuk), sub: UI.rp(h.masuk) }),
       UI.kartuKpi({ label: 'Uang keluar', nilai: UI.rpS(h.keluar), sub: UI.rp(h.keluar) })
     ]));
+
+    /* insight: kenapa saldo segini di tanggal ini */
+    var an = E.analisaHari(hasil, h.tgl);
+    var blok = blokPenyebab(an);
+    if (blok) isi.appendChild(blok);
 
     var SUMBER = { rab: 'RAB', recurring: 'Fixed cost', baseline: 'Baseline harian',
                    rencana: 'Rencana', variabel: 'Biaya variabel', whatif: 'Simulasi', forecast: 'Dari target GMV' };
@@ -838,6 +1031,7 @@
   }
 
   HAL._detailHari = detailHari;
+  HAL._kartuIsiSaldo = kartuIsiSaldo;
   HAL._pemilihPeriode = pemilihPeriode;
   HAL._pilSkenario = pilSkenario;
   HAL._setPeriode = setPeriode;

@@ -398,11 +398,34 @@
     if (!sk) sk = CFG.SKENARIO[1];
     var faktor = sk.faktor;
 
-    var tanggalList = rentang(dari, sampai);
     var cutoff = cutoffAktual(data);
 
-    /* bulan yang perlu peta GMV: rentang + lag mundur (butuh GMV sebelum `dari`) */
-    var bulanSet = {}, awalLag = tambahHari(dari, -35);
+    /* ------------------------------------------------------------------
+       Saldo itu berkelanjutan: sisa bulan lalu jadi modal bulan ini.
+       Karena itu perhitungan selalu DIMULAI dari tanggal saldo awal, bukan
+       dari `dari` — lalu hasil sebelum `dari` dibuang dari output. Tanpa ini,
+       melihat "Desember saja" akan mulai dari saldo awal (biasanya 0) dan
+       mengabaikan surplus/defisit Agustus–November.
+       Jendela dibatasi 400 hari ke belakang supaya tetap ringan.
+       ------------------------------------------------------------------ */
+    var awalSaldo = String(cfg.saldoAwalTanggal || '2026-01-01').slice(0, 10);
+    var mulaiWalk = tambahHari(awalSaldo, 1);
+    var batasMundur = tambahHari(dari, -400);
+    if (mulaiWalk < batasMundur) mulaiWalk = batasMundur;
+    if (mulaiWalk > dari) mulaiWalk = dari;
+
+    /* Tanpa saldo awal, merangkai mundur cuma menghasilkan saldo semu: bulan-bulan
+       sebelum periode ini biasanya belum punya rencana pengeluaran, jadi yang
+       terhitung hanya pemasukan. Kalau saldo awal belum diisi, mulai dari `dari`
+       saja — lebih jujur menampilkan 0 daripada angka karangan. */
+    var punyaSaldoAwal = (Number(cfg.saldoAwal) || 0) > 0;
+    if (!punyaSaldoAwal) mulaiWalk = dari;
+
+    var tanggalList = rentang(mulaiWalk, sampai);   /* dihitung */
+    var tampilDari = dari;                          /* ditampilkan */
+
+    /* bulan yang perlu peta GMV: rentang hitung + lag mundur */
+    var bulanSet = {}, awalLag = tambahHari(mulaiWalk, -35);
     var scan = rentang(awalLag, sampai);
     for (i = 0; i < scan.length; i++) bulanSet[bulanKey(scan[i])] = true;
     var bulanList = Object.keys(bulanSet).sort();
@@ -432,9 +455,9 @@
       });
     }
 
-    /* saldo pembuka = saldo akhir hari sebelum `dari` */
-    var saldo = saldoAktualPada(data, cfg, tambahHari(dari, -1));
-    var saldoAwalPeriode = saldo;
+    /* saldo pembuka jendela hitung (biasanya = saldo awal config) */
+    var saldo = saldoAktualPada(data, cfg, tambahHari(mulaiWalk, -1));
+    var saldoAwalPeriode = saldo;   /* diperbarui saat mencapai `tampilDari` */
 
     var hari = [], totalMasuk = 0, totalKeluar = 0;
     var masukAktual = 0, keluarAktual = 0, masukProyeksi = 0, keluarProyeksi = 0;
@@ -445,6 +468,9 @@
       var detailMasuk = {}, detailKeluar = {}, item = [];
       var masuk = 0, keluar = 0;
 
+      var tampil = tgl >= tampilDari;      /* hari sebelum ini cuma buat merangkai saldo */
+      if (tampil && !hari.length) saldoAwalPeriode = saldo;
+
       if (isAktual) {
         var a = aktual[tgl];
         if (a) {
@@ -452,7 +478,7 @@
           masuk = a.totalMasuk; keluar = a.totalKeluar;
           item = a.item.slice();
         }
-        masukAktual += masuk; keluarAktual += keluar;
+        if (tampil) { masukAktual += masuk; keluarAktual += keluar; }
       } else {
         /* penerimaan dari GMV yang sudah lewat lag */
         var kas = kasDariGmv(gmv, tgl, faktor, cfg);
@@ -470,7 +496,7 @@
             item.push({ coa: it.coa, nominal: it.nominal, tipe: 'out', label: it.label, sumber: it.sumber });
           }
         }
-        masukProyeksi += masuk; keluarProyeksi += keluar;
+        if (tampil) { masukProyeksi += masuk; keluarProyeksi += keluar; }
       }
 
       /* what-if berlaku di aktual maupun proyeksi */
@@ -488,6 +514,7 @@
       }
 
       saldo = saldo + masuk - keluar;
+      if (!tampil) continue;              /* hari pra-periode: cukup rangkai saldonya */
       totalMasuk += masuk; totalKeluar += keluar;
 
       /* agregasi per bucket buat stacked bar */
@@ -619,6 +646,77 @@
     return grup;
   }
 
+  /* ==========================================================================
+     ANALISA PENYEBAB — "kenapa saldo turun/rendah di tanggal ini?"
+     Membandingkan hari target dengan perilaku normal di periode yang sama:
+       · pengeluaran pos apa yang jauh di atas kebiasaannya
+       · apakah pemasukan hari itu memang seret
+       · seberapa dalam turunnya dari puncak terakhir
+     ========================================================================== */
+  function analisaHari(hasil, tgl) {
+    var hari = hasil.hari || [];
+    var idx = -1, i;
+    for (i = 0; i < hari.length; i++) if (hari[i].tgl === tgl) { idx = i; break; }
+    if (idx < 0) return null;
+    var h = hari[idx];
+
+    /* --- rata-rata normal per pos & pemasukan harian --- */
+    var jml = hari.length || 1;
+    var rataMasuk = hari.reduce(function (a, x) { return a + x.masuk; }, 0) / jml;
+    var rataKeluar = hari.reduce(function (a, x) { return a + x.keluar; }, 0) / jml;
+
+    var totalPos = {}, hariAdaPos = {};
+    hari.forEach(function (x) {
+      for (var c in x.detailKeluar) {
+        if (!x.detailKeluar.hasOwnProperty(c)) continue;
+        totalPos[c] = (totalPos[c] || 0) + x.detailKeluar[c];
+        hariAdaPos[c] = (hariAdaPos[c] || 0) + 1;
+      }
+    });
+
+    /* --- pos pemicu: dibanding rata-rata pos itu sendiri --- */
+    var pemicu = [];
+    for (var coa in h.detailKeluar) {
+      if (!h.detailKeluar.hasOwnProperty(coa)) continue;
+      var nilai = h.detailKeluar[coa];
+      var rataPos = (totalPos[coa] || 0) / jml;                 /* rata-rata seluruh hari */
+      var kali = rataPos > 0 ? nilai / rataPos : (nilai > 0 ? 99 : 0);
+      var jarang = (hariAdaPos[coa] || 0) <= Math.max(2, Math.round(jml * 0.1));
+      pemicu.push({
+        coa: coa, nama: CFG.namaCoa(coa), nominal: nilai,
+        rataPos: Math.round(rataPos), kali: kali, jarang: jarang,
+        porsi: h.keluar ? nilai / h.keluar : 0
+      });
+    }
+    pemicu.sort(function (a, b) { return b.nominal - a.nominal; });
+
+    /* --- turun dari puncak terakhir sebelum tanggal ini --- */
+    var puncak = null;
+    for (i = idx; i >= 0; i--) {
+      if (!puncak || hari[i].saldo > puncak.saldo) puncak = hari[i];
+    }
+    var turunDariPuncak = puncak ? puncak.saldo - h.saldo : 0;
+
+    /* --- akumulasi: berapa hari beruntun defisit sampai titik ini --- */
+    var beruntun = 0;
+    for (i = idx; i >= 0; i--) { if (hari[i].net < 0) beruntun++; else break; }
+    var totalDefisitBeruntun = 0;
+    for (i = idx; i > idx - beruntun; i--) totalDefisitBeruntun += (hari[i].keluar - hari[i].masuk);
+
+    return {
+      hari: h,
+      rataMasuk: Math.round(rataMasuk),
+      rataKeluar: Math.round(rataKeluar),
+      masukSeret: h.masuk < rataMasuk * 0.6,
+      keluarBesar: h.keluar > rataKeluar * 1.3,
+      pemicu: pemicu,
+      puncak: puncak,
+      turunDariPuncak: turunDariPuncak,
+      hariBeruntunDefisit: beruntun,
+      totalDefisitBeruntun: Math.round(totalDefisitBeruntun)
+    };
+  }
+
   /* Runway: berapa hari kas bertahan kalau penerimaan berhenti total.
      Metrik klasik buat board — "kalau jualan mandek, kita kuat berapa lama". */
   function runway(hari, saldoSekarang) {
@@ -669,6 +767,6 @@
     cutoffAktual: cutoffAktual, saldoAktualPada: saldoAktualPada, hitungBaseline: hitungBaseline,
     petaRencana: petaRencana, coaBerencana: coaBerencana,
     hitung: hitung, hitungSemua: hitungSemua, omsetBulanan: omsetBulanan,
-    agregasi: agregasi, runway: runway
+    agregasi: agregasi, runway: runway, analisaHari: analisaHari
   };
 })(window);

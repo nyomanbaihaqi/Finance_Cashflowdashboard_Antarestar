@@ -167,6 +167,11 @@
     ikon: 'inbox',
     render: function (root, ulang) {
 
+      /* sisa kas belum diisi → tampilkan formulirnya paling atas */
+      if (!(Number(cfg().saldoAwal) > 0) && HAL._kartuIsiSaldo) {
+        root.appendChild(HAL._kartuIsiSaldo(global.APP.filter, ulang));
+      }
+
       /* ---------- aksi cepat ---------- */
       var aksi = [
         { ikon: 'arrowDown', warna: '#059669', bg: '#ecfdf5', judul: 'Catat uang masuk',

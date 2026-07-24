@@ -84,30 +84,74 @@
     var n = utama.length;
     var lebar = Math.max(lebarWadah(wadah), 560);
     var tinggi = opt.tinggi || 380;
-    var padKiri = 72, padKanan = 26, padAtas = 30, padBawah = 46;
+
+    var tampilCfg = opt.tampil || { saldo: true, masuk: false, keluar: false };
+    if (!tampilCfg.saldo && !tampilCfg.masuk && !tampilCfg.keluar) tampilCfg = { saldo: true };
+
+    var adaArus = !!(tampilCfg.masuk || tampilCfg.keluar);
+    var ganda = !!(tampilCfg.saldo && adaArus);   /* sumbu ganda */
+
+    var padKiri = 72, padKanan = ganda ? 74 : 26, padAtas = 30, padBawah = 46;
     var plotW = lebar - padKiri - padKanan, plotH = tinggi - padAtas - padBawah;
 
-    /* skala Y */
-    var minS = Infinity, maxS = -Infinity, s, i;
-    var daftarSeri = opt.semuaSkenario ? Object.keys(seri) : [aktif];
-    daftarSeri.forEach(function (id) {
-      (seri[id] || []).forEach(function (p) {
-        if (p.saldo < minS) minS = p.saldo;
-        if (p.saldo > maxS) maxS = p.saldo;
+    var i, s;
+    var TIK = 5;
+
+    /* Bangun skala rapi dari rentang nilai. */
+    function buatSkala(min, max) {
+      if (!isFinite(min)) { min = 0; max = 1; }
+      if (min > 0) min = 0;
+      if (max === min) max = min + 1;
+      var p = (max - min) * 0.14;
+      var lo = min - p * 0.5, hi = max + p;
+      var st = langkahRapi(hi - lo, TIK);
+      lo = Math.floor(lo / st) * st;
+      hi = Math.ceil(hi / st) * st;
+      return { lo: lo, hi: hi, step: st, n: Math.max(1, Math.round((hi - lo) / st)) };
+    }
+
+    /* --- rentang saldo --- */
+    var sMin = Infinity, sMax = -Infinity;
+    var daftarSeri = (tampilCfg.saldo && opt.semuaSkenario) ? Object.keys(seri) : [aktif];
+    if (tampilCfg.saldo) {
+      daftarSeri.forEach(function (id) {
+        (seri[id] || []).forEach(function (p) {
+          if (p.saldo < sMin) sMin = p.saldo;
+          if (p.saldo > sMax) sMax = p.saldo;
+        });
+      });
+    }
+    var ambang = (tampilCfg.saldo ? (Number(opt.cfg.ambangBahaya) || 0) : 0);
+    if (ambang) { sMin = Math.min(sMin, ambang); sMax = Math.max(sMax, ambang); }
+
+    /* --- rentang arus --- */
+    var aMin = Infinity, aMax = -Infinity;
+    ['masuk', 'keluar'].forEach(function (k) {
+      if (!tampilCfg[k]) return;
+      utama.forEach(function (p) {
+        if (p[k] < aMin) aMin = p[k];
+        if (p[k] > aMax) aMax = p[k];
       });
     });
-    var ambang = Number(opt.cfg.ambangBahaya) || 0;
-    if (ambang) { minS = Math.min(minS, ambang); maxS = Math.max(maxS, ambang); }
-    if (minS > 0) minS = 0;
-    if (maxS === minS) maxS = minS + 1;
-    var pad = (maxS - minS) * 0.14;
-    var yMin = minS - pad * 0.5, yMax = maxS + pad;
-    var step = langkahRapi(yMax - yMin, 5);
-    yMin = Math.floor(yMin / step) * step;
-    yMax = Math.ceil(yMax / step) * step;
+
+    var skS = tampilCfg.saldo ? buatSkala(sMin, sMax) : null;
+    var skA = adaArus ? buatSkala(aMin, aMax) : null;
+
+    /* Samakan jumlah garis bantu supaya kedua sumbu sejajar rapi. */
+    if (ganda) {
+      var nMax = Math.max(skS.n, skA.n);
+      skS.hi = skS.lo + skS.step * nMax; skS.n = nMax;
+      skA.hi = skA.lo + skA.step * nMax; skA.n = nMax;
+    }
+
+    /* skala tunggal dipakai saat cuma satu jenis yang tampil */
+    var skUtama = skS || skA;
 
     function X(i2) { return padKiri + (n <= 1 ? plotW / 2 : plotW * i2 / (n - 1)); }
-    function Y(v) { return padAtas + plotH * (1 - (v - yMin) / (yMax - yMin)); }
+    function Ysk(v, sk) { return padAtas + plotH * (1 - (v - sk.lo) / (sk.hi - sk.lo)); }
+    /* saldo selalu pakai skala saldo; arus pakai skala arus kalau sumbu ganda */
+    function Y(v) { return Ysk(v, skS || skUtama); }
+    function Ya(v) { return Ysk(v, ganda ? skA : skUtama); }
 
     var svg = sv('svg', { class: 'plot', viewBox: '0 0 ' + lebar + ' ' + tinggi, width: '100%', height: tinggi });
 
@@ -122,13 +166,32 @@
       }
     }
 
-    /* grid + label Y */
-    for (var v = yMin; v <= yMax + step / 2; v += step) {
-      var y = Y(v);
-      svg.appendChild(sv('line', { x1: padKiri, y1: y, x2: lebar - padKanan, y2: y, class: 'grid' }));
-      var t = sv('text', { x: padKiri - 12, y: y + 4, class: 'ax-y' });
-      t.textContent = UI.angkaS(v);
-      svg.appendChild(t);
+    /* grid + label sumbu.
+       Sumbu ganda: kiri = arus kas harian, kanan = saldo. Keduanya punya skala
+       sendiri tapi garis bantunya sejajar, jadi masuk vs keluar tetap terlihat
+       saling menyilang walau saldo jauh lebih besar. */
+    var skKiri = ganda ? skA : skUtama;
+    for (var k2 = 0; k2 <= skKiri.n; k2++) {
+      var yg = padAtas + plotH * (1 - k2 / skKiri.n);
+      svg.appendChild(sv('line', { x1: padKiri, y1: yg, x2: lebar - padKanan, y2: yg, class: 'grid' }));
+
+      var tKiri = sv('text', { x: padKiri - 12, y: yg + 4, class: 'ax-y' });
+      tKiri.textContent = UI.angkaS(skKiri.lo + skKiri.step * k2);
+      svg.appendChild(tKiri);
+
+      if (ganda) {
+        var tKanan = sv('text', { x: lebar - padKanan + 12, y: yg + 4, class: 'ax-y ax-y-kanan' });
+        tKanan.textContent = UI.angkaS(skS.lo + skS.step * k2);
+        svg.appendChild(tKanan);
+      }
+    }
+    if (ganda) {
+      var jKiri = sv('text', { x: padKiri - 12, y: padAtas - 12, class: 'ax-judul', 'text-anchor': 'end' });
+      jKiri.textContent = 'ARUS HARIAN';
+      svg.appendChild(jKiri);
+      var jKanan = sv('text', { x: lebar - padKanan + 12, y: padAtas - 12, class: 'ax-judul' });
+      jKanan.textContent = 'SALDO';
+      svg.appendChild(jKanan);
     }
 
     /* garis ambang */
@@ -146,40 +209,68 @@
 
     var warnaAktif = (CFG.SKENARIO.filter(function (x) { return x.id === aktif; })[0] || CFG.SKENARIO[1]).warna;
 
-    /* area di bawah garis aktif */
-    var titikArea = [];
-    for (i = 0; i < n; i++) titikArea.push(X(i) + ',' + Y(utama[i].saldo));
-    titikArea.push(X(n - 1) + ',' + (padAtas + plotH));
-    titikArea.push(X(0) + ',' + (padAtas + plotH));
-    svg.appendChild(sv('polygon', { points: titikArea.join(' '), fill: warnaAktif, opacity: 0.10 }));
-
-    /* skenario lain (tipis) */
-    if (opt.semuaSkenario) {
-      CFG.SKENARIO.forEach(function (sk) {
-        if (sk.id === aktif || !seri[sk.id]) return;
-        var dd = [];
-        for (i = 0; i < seri[sk.id].length; i++) dd.push((i ? 'L' : 'M') + X(i) + ' ' + Y(seri[sk.id][i].saldo));
-        svg.appendChild(sv('path', {
-          d: dd.join(' '), fill: 'none', stroke: sk.warna, 'stroke-width': 1.5,
-          'stroke-dasharray': '6 5', opacity: 0.5, 'stroke-linecap': 'round'
-        }));
-      });
+    /* ---- garis arus: uang masuk & uang keluar ---- */
+    function garisArus(kunci, warna) {
+      if (!tampilCfg[kunci]) return;
+      var dd = [], k;
+      for (k = 0; k < n; k++) dd.push((k ? 'L' : 'M') + X(k) + ' ' + Ya(utama[k][kunci]));
+      /* area tipis kalau arus berdiri sendiri (tanpa saldo) */
+      if (!tampilCfg.saldo) {
+        var dasar = Ya(Math.max((ganda ? skA : skUtama).lo, 0));
+        var area = dd.slice();
+        area.push('L' + X(n - 1) + ' ' + dasar);
+        area.push('L' + X(0) + ' ' + dasar + ' Z');
+        svg.appendChild(sv('path', { d: area.join(' '), fill: warna, opacity: 0.08 }));
+      }
+      svg.appendChild(sv('path', {
+        d: dd.join(' '), fill: 'none', stroke: warna, 'stroke-width': 2.2,
+        'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+      }));
     }
 
-    /* garis utama: bagian aktual solid, proyeksi putus-putus */
+    if (tampilCfg.saldo) {
+      /* area di bawah garis saldo */
+      var titikArea = [];
+      for (i = 0; i < n; i++) titikArea.push(X(i) + ',' + Y(utama[i].saldo));
+      titikArea.push(X(n - 1) + ',' + (padAtas + plotH));
+      titikArea.push(X(0) + ',' + (padAtas + plotH));
+      svg.appendChild(sv('polygon', { points: titikArea.join(' '), fill: warnaAktif, opacity: 0.10 }));
+
+      /* Skenario pembanding disembunyikan saat garis arus tampil — warnanya
+         bentrok (pesimis merah vs keluar merah) dan bikin grafik ramai. */
+      if (opt.semuaSkenario && !adaArus) {
+        CFG.SKENARIO.forEach(function (sk) {
+          if (sk.id === aktif || !seri[sk.id]) return;
+          var dd2 = [];
+          for (i = 0; i < seri[sk.id].length; i++) dd2.push((i ? 'L' : 'M') + X(i) + ' ' + Y(seri[sk.id][i].saldo));
+          svg.appendChild(sv('path', {
+            d: dd2.join(' '), fill: 'none', stroke: sk.warna, 'stroke-width': 1.5,
+            'stroke-dasharray': '6 5', opacity: 0.5, 'stroke-linecap': 'round'
+          }));
+        });
+      }
+    }
+
+    /* arus digambar sebelum garis saldo supaya saldo tetap paling menonjol */
+    garisArus('masuk', '#10b981');
+    garisArus('keluar', '#e11d48');
+
+    /* garis saldo: bagian aktual solid, proyeksi putus-putus */
     function jalur(dari, sampai) {
       var dd = [];
       for (var k = dari; k <= sampai; k++) dd.push((k === dari ? 'M' : 'L') + X(k) + ' ' + Y(utama[k].saldo));
       return dd.join(' ');
     }
-    if (idxCut >= 0) {
-      svg.appendChild(sv('path', { d: jalur(0, idxCut), fill: 'none', stroke: '#0f172a',
-        'stroke-width': 2.6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
-    }
-    if (idxCut < n - 1) {
-      svg.appendChild(sv('path', { d: jalur(Math.max(idxCut, 0), n - 1), fill: 'none', stroke: warnaAktif,
-        'stroke-width': 2.8, 'stroke-dasharray': idxCut >= 0 ? '7 5' : '0',
-        'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+    if (tampilCfg.saldo) {
+      if (idxCut >= 0) {
+        svg.appendChild(sv('path', { d: jalur(0, idxCut), fill: 'none', stroke: '#0f172a',
+          'stroke-width': 2.6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+      }
+      if (idxCut < n - 1) {
+        svg.appendChild(sv('path', { d: jalur(Math.max(idxCut, 0), n - 1), fill: 'none', stroke: warnaAktif,
+          'stroke-width': 2.8, 'stroke-dasharray': idxCut >= 0 ? '7 5' : '0',
+          'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+      }
     }
 
     /* penanda batas aktual */
@@ -191,27 +282,27 @@
       svg.appendChild(tc);
     }
 
-    /* titik terendah (proyeksi) — inti pesan chart ini */
-    var idxMin = -1, minVal = Infinity;
-    for (i = 0; i < n; i++) {
-      if (idxCut >= 0 && i <= idxCut) continue;
-      if (utama[i].saldo < minVal) { minVal = utama[i].saldo; idxMin = i; }
+    /* titik terendah + titik akhir — hanya relevan untuk garis saldo */
+    if (tampilCfg.saldo) {
+      var idxMin = -1, minVal = Infinity;
+      for (i = 0; i < n; i++) {
+        if (idxCut >= 0 && i <= idxCut) continue;
+        if (utama[i].saldo < minVal) { minVal = utama[i].saldo; idxMin = i; }
+      }
+      if (idxMin < 0) { for (i = 0; i < n; i++) if (utama[i].saldo < minVal) { minVal = utama[i].saldo; idxMin = i; } }
+      if (idxMin >= 0) {
+        var xm = X(idxMin), ym = Y(minVal);
+        var bahaya = ambang && minVal < ambang;
+        svg.appendChild(sv('circle', { cx: xm, cy: ym, r: 6, fill: 'none',
+          stroke: bahaya ? '#e11d48' : warnaAktif, 'stroke-width': 2, opacity: 0.45 }));
+        svg.appendChild(sv('circle', { cx: xm, cy: ym, r: 3.5, fill: bahaya ? '#e11d48' : warnaAktif }));
+        var lbl = sv('text', { x: xm, y: ym + 22, class: 'titik-label', 'text-anchor': 'middle',
+          fill: bahaya ? '#e11d48' : '#475569' });
+        lbl.textContent = 'terendah ' + UI.rpS(minVal);
+        svg.appendChild(lbl);
+      }
+      svg.appendChild(sv('circle', { cx: X(n - 1), cy: Y(utama[n - 1].saldo), r: 4.5, fill: warnaAktif }));
     }
-    if (idxMin < 0) { for (i = 0; i < n; i++) if (utama[i].saldo < minVal) { minVal = utama[i].saldo; idxMin = i; } }
-    if (idxMin >= 0) {
-      var xm = X(idxMin), ym = Y(minVal);
-      var bahaya = ambang && minVal < ambang;
-      svg.appendChild(sv('circle', { cx: xm, cy: ym, r: 6, fill: 'none',
-        stroke: bahaya ? '#e11d48' : warnaAktif, 'stroke-width': 2, opacity: 0.45 }));
-      svg.appendChild(sv('circle', { cx: xm, cy: ym, r: 3.5, fill: bahaya ? '#e11d48' : warnaAktif }));
-      var lbl = sv('text', { x: xm, y: ym + 22, class: 'titik-label', 'text-anchor': 'middle',
-        fill: bahaya ? '#e11d48' : '#475569' });
-      lbl.textContent = 'terendah ' + UI.rpS(minVal);
-      svg.appendChild(lbl);
-    }
-
-    /* titik akhir */
-    svg.appendChild(sv('circle', { cx: X(n - 1), cy: Y(utama[n - 1].saldo), r: 4.5, fill: warnaAktif }));
 
     /* label X */
     var lompat = Math.max(1, Math.ceil(n / 12));
@@ -243,17 +334,29 @@
     }
     function tampil(p) {
       var d = utama[p.i];
+      /* titik hover menempel ke garis pertama yang sedang tampil */
+      var kunciDot = tampil_kunciUtama();
+      var yDot = kunciDot === 'saldo' ? Y(d.saldo) : Ya(d[kunciDot]);
       hoverLine.setAttribute('x1', X(p.i)); hoverLine.setAttribute('x2', X(p.i)); hoverLine.setAttribute('opacity', 1);
-      hoverDot.setAttribute('cx', X(p.i)); hoverDot.setAttribute('cy', Y(d.saldo));
-      hoverDot.setAttribute('fill', d.tipe === 'aktual' ? '#0f172a' : warnaAktif);
+      hoverDot.setAttribute('cx', X(p.i)); hoverDot.setAttribute('cy', yDot);
+      hoverDot.setAttribute('fill', kunciDot === 'masuk' ? '#10b981'
+        : kunciDot === 'keluar' ? '#e11d48'
+        : (d.tipe === 'aktual' ? '#0f172a' : warnaAktif));
       hoverDot.setAttribute('opacity', 1);
-      var html = '<div class="tip-tgl">' + labelPanjang(d, grain) + ' · <b>' + d.tipe + '</b></div>' +
-        '<div class="tip-utama"><span>Saldo akhir</span><b>' + UI.rpS(d.saldo) + '</b></div>' +
+
+      var html = '<div class="tip-tgl">' + labelPanjang(d, grain) + ' · <b>' + d.tipe + '</b></div>';
+      html += '<div class="tip-utama"><span>Saldo akhir</span><b>' + UI.rpS(d.saldo) + '</b></div>' +
         '<div class="tip-row"><span class="tip-dot" style="background:#10b981"></span><span class="tip-k">Masuk</span><span class="tip-v">' + UI.rpS(d.masuk) + '</span></div>' +
         '<div class="tip-row"><span class="tip-dot" style="background:#e11d48"></span><span class="tip-k">Keluar</span><span class="tip-v">' + UI.rpS(d.keluar) + '</span></div>' +
         '<div class="tip-total"><span>Selisih</span><b class="' + (d.net >= 0 ? 'hijau' : 'merah') + '">' +
           (d.net >= 0 ? '+' : '') + UI.rpS(d.net) + '</b></div>';
-      tip.tampil(html, p.x, Y(d.saldo) / tinggi * (box.clientHeight || tinggi), p.w);
+      tip.tampil(html, p.x, yDot / tinggi * (box.clientHeight || tinggi), p.w);
+    }
+    function tampil_kunciUtama() {
+      if (tampilCfg.saldo) return 'saldo';
+      if (tampilCfg.masuk) return 'masuk';
+      if (tampilCfg.keluar) return 'keluar';
+      return 'saldo';
     }
     rect.addEventListener('mousemove', function (e) { tampil(idxDari(e)); });
     rect.addEventListener('mouseleave', function () {

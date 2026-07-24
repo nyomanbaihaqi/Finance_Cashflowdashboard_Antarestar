@@ -272,7 +272,8 @@
     pakaiBaseline:    true,           // ON = operasional harian diproyeksi dari rata-rata aktual
     baselineHari:     30,             // jendela rata-rata (hari terakhir)
     baselineOverride: {},             // { coaId: nominal harian } — isian manual finance
-    baselineOff:      []              // coaId yang dimatikan dari baseline
+    baselineOff:      [],             // coaId yang dimatikan dari baseline
+    coaTambahan:      []              // kategori pengeluaran custom: [{id,nama,bucket}]
   };
 
   /* Recurring / fixed cost contoh — diganti lewat halaman Fixed Cost */
@@ -328,6 +329,25 @@
     channel: function (id) {
       for (var i = 0; i < CHANNELS.length; i++) if (CHANNELS[i].id === id) return CHANNELS[i];
       return null;
+    },
+
+    /* ------ kategori pengeluaran custom (disimpan di Config, bukan tab baru) ------ */
+    /* Gabungkan daftar custom ke COA_OUT. Idempotent — aman dipanggil ulang. */
+    terapkanCoaTambahan: function (list) {
+      (list || []).forEach(function (o) {
+        if (!o || !o.id || !o.nama) return;
+        if (COA_OUT.some(function (c) { return c.id === o.id; })) return;
+        COA_OUT.push({ no: '', id: o.id, nama: o.nama, bucket: o.bucket || 'lain', custom: true });
+      });
+    },
+    hapusCoaTambahan: function (id) {
+      for (var i = COA_OUT.length - 1; i >= 0; i--) {
+        if (COA_OUT[i].id === id && COA_OUT[i].custom) COA_OUT.splice(i, 1);
+      }
+    },
+    isCoaCustom: function (id) {
+      var c = this.coa(id);
+      return !!(c && c.custom);
     }
   };
 })(window);

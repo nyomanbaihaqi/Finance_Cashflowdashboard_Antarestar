@@ -35,6 +35,7 @@
   /* Terapkan config tersimpan ke objek master di CFG */
   function terapkanConfig() {
     var c = S.data().config || {};
+    if (Array.isArray(c.coaTambahan)) CFG.terapkanCoaTambahan(c.coaTambahan);
     if (c.skenarioAktif) APP.filter.skenario = c.skenarioAktif;
     if (c.pola) { for (var k in c.pola) if (CFG.POLA.hasOwnProperty(k)) CFG.POLA[k] = Number(c.pola[k]) || CFG.POLA[k]; }
     if (Array.isArray(c.channelOverride)) {

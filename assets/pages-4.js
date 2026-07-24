@@ -13,6 +13,7 @@
   var HAL = global.HAL = global.HAL || {};
 
   function d() { return S.data(); }
+  function cfg() { return S.data().config; }
 
   function rowBulan(bulan, coa) {
     return d().rencanaBulanan.filter(function (x) { return x.bulan === bulan && x.coa === coa; })[0];
@@ -103,6 +104,7 @@
         UI.pilih([{ value: 2026, label: 'Tahun 2026' }, { value: 2027, label: 'Tahun 2027' }], tahun,
           function (v) { global.APP.rencanaTahun = +v; ulang(); }, { class: 'inp inp-ramping' }),
         el('div', { class: 'spacer' }),
+        UI.btn('Tambah kategori', { kecil: true, ikon: 'plus', onKlik: function () { kelolaKategori(ulang); } }),
         UI.btn('Override harian', { kecil: true, ikon: 'calendar', onKlik: function () { editorHarian(ulang); } })
       ]));
 
@@ -235,5 +237,104 @@
     UI.modal('Override harian — pengeluaran', wrap, [{ label: 'Selesai', gaya: 'btn-utama' }], { lebar: 'lebar' });
   }
 
+  /* ======================================================================
+     Kelola kategori tambahan — kategori custom disimpan di Config (tab yang
+     sudah ada), jadi tidak perlu redeploy Apps Script.
+     ====================================================================== */
+  function kelolaKategori(ulang) {
+    var wrap = el('div');
+
+    /* --- form tambah --- */
+    var inNama = UI.input({ placeholder: 'mis. BIAYA LEGAL & NOTARIS' });
+    var inBucket = UI.pilih(Object.keys(CFG.BUCKET)
+      .filter(function (k) { return k !== 'pemasukan'; })
+      .map(function (k) { return { value: k, label: CFG.BUCKET[k].label }; }), 'lain');
+
+    var fNama = UI.field('Nama kategori', inNama, null, { wajib: true });
+
+    wrap.appendChild(UI.seksi('Tambah kategori baru',
+      'Kategori custom langsung muncul di grid ini, RAB, Aktual Harian, dan Cashflow Harian.',
+      el('div', { class: 'form-grid', style: 'grid-template-columns:1fr 180px auto;align-items:end' }, [
+        fNama,
+        UI.field('Kelompok (warna)', inBucket),
+        el('div', { class: 'field field-tombol' },
+          UI.btn('Tambah', { gaya: 'btn-utama', ikon: 'plus', onKlik: function () { simpan(); } }))
+      ])));
+
+    /* --- daftar kategori custom yang sudah ada --- */
+    var daftar = el('div');
+    wrap.appendChild(daftar);
+
+    function gambarDaftar() {
+      UI.kosongkan(daftar);
+      var custom = CFG.COA_OUT.filter(function (c) { return c.custom; });
+      if (!custom.length) {
+        daftar.appendChild(UI.kosong({ ikon: 'grid', judul: 'Belum ada kategori tambahan',
+          pesan: '27 kategori bawaan tetap tersedia. Tambah di atas kalau ada pos baru.' }));
+        return;
+      }
+      daftar.appendChild(UI.seksi('Kategori tambahan (' + custom.length + ')', null,
+        UI.tabel([
+          { judul: 'Nama', render: function (c) {
+              return el('div', null, [
+                el('div', { class: 'tebal', text: c.nama }),
+                el('div', { class: 'muted2' }, [
+                  el('span', { class: 'lg-dot', style: 'background:' + CFG.BUCKET[c.bucket].warna }),
+                  el('span', { text: ' ' + CFG.BUCKET[c.bucket].label })
+                ])
+              ]); } },
+          { judul: '', kelas: 'kanan', lebar: '60px', render: function (c) {
+              return UI.btn('', { ikon: 'trash', kecil: true, gaya: 'btn-ghost', title: 'Hapus kategori',
+                onKlik: function () { hapus(c); } }); } }
+        ], custom)));
+    }
+
+    function simpan() {
+      UI.bersihkanSalah(wrap);
+      var nama = inNama.value.trim();
+      if (!nama) { UI.salahField(fNama, 'Nama kategori wajib diisi'); return; }
+      /* cegah duplikat nama (bawaan / custom) */
+      if (CFG.COA_OUT.some(function (c) { return c.nama.toUpperCase() === nama.toUpperCase(); })) {
+        UI.salahField(fNama, 'Kategori dengan nama itu sudah ada'); return;
+      }
+      var baru = { id: S.uid('out_c'), nama: nama, bucket: inBucket.value };
+      var list = (cfg().coaTambahan || []).slice();
+      list.push(baru);
+      CFG.terapkanCoaTambahan([baru]);
+      S.simpanConfig({ coaTambahan: list }).then(function () {
+        UI.toast('Kategori "' + nama + '" ditambahkan', 'sukses');
+        inNama.value = '';
+        gambarDaftar();
+        if (ulang) ulang();
+      });
+    }
+
+    function hapus(c) {
+      var pakaiB = d().rencanaBulanan.filter(function (x) { return x.coa === c.id; }).length;
+      var pakaiH = d().rencanaHarian.filter(function (x) { return x.coa === c.id; }).length;
+      var pakaiR = d().rab.filter(function (x) { return x.coa === c.id; }).length;
+      var pakaiA = d().actual.filter(function (x) { return x.coa === c.id; }).length;
+      var dipakai = pakaiB + pakaiH + pakaiR + pakaiA;
+
+      UI.konfirmasi('Hapus kategori "' + c.nama + '"?',
+        dipakai
+          ? 'Kategori ini dipakai di ' + dipakai + ' entri (rencana/RAB/aktual). Entri itu tetap tersimpan tapi kategorinya jadi tidak dikenal. Sebaiknya kosongkan dulu datanya. Tetap hapus?'
+          : 'Kategori belum dipakai di data mana pun. Aman dihapus.',
+        function () {
+          var list = (cfg().coaTambahan || []).filter(function (x) { return x.id !== c.id; });
+          CFG.hapusCoaTambahan(c.id);
+          S.simpanConfig({ coaTambahan: list }).then(function () {
+            UI.toast('Kategori dihapus', 'sukses');
+            gambarDaftar();
+            if (ulang) ulang();
+          });
+        }, { labelYa: 'Ya, hapus' });
+    }
+
+    gambarDaftar();
+    UI.modal('Kelola kategori pengeluaran', wrap, [{ label: 'Selesai', gaya: 'btn-utama' }], { lebar: 'lebar' });
+  }
+
   HAL._rencanaEditorHarian = editorHarian;
+  HAL._kelolaKategori = kelolaKategori;
 })(window);

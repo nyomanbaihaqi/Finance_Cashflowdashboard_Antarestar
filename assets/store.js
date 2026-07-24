@@ -182,6 +182,7 @@
     d.config.pakaiBaseline = !(d.config.pakaiBaseline === false || d.config.pakaiBaseline === 'FALSE');
     if (!d.config.baselineOverride || typeof d.config.baselineOverride !== 'object') d.config.baselineOverride = {};
     if (!Array.isArray(d.config.baselineOff)) d.config.baselineOff = [];
+    if (!Array.isArray(d.config.coaTambahan)) d.config.coaTambahan = [];
 
     return d;
   }
