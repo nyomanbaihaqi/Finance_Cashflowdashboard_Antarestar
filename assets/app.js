@@ -174,6 +174,20 @@
     }
   });
 
+  /* Gagal simpan ke sheet — WAJIB kelihatan. Ini dashboard uang; diam-diam
+     gagal jauh lebih berbahaya daripada notifikasi yang mengganggu. */
+  global.addEventListener('store:gagal', function (e) {
+    UI.toast('GAGAL simpan ke Sheet: ' + e.detail.pesan +
+             ' — perubahan baru tersimpan di browser ini saja.', 'error', { durasi: 9000 });
+  });
+
+  /* Rantai .then() yang putus karena gagal simpan tidak boleh hilang senyap. */
+  global.addEventListener('unhandledrejection', function (e) {
+    var pesan = e.reason && e.reason.message ? e.reason.message : String(e.reason || '');
+    if (/gagal simpan/i.test(pesan)) return;   // sudah ditoast di atas
+    console.error('Promise gagal:', e.reason);
+  });
+
   /* Gambar ulang grafik saat lebar window berubah */
   var timerResize, lebarTerakhir = global.innerWidth;
   global.addEventListener('resize', function () {

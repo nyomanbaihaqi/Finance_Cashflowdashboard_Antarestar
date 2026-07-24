@@ -234,18 +234,28 @@
   }
 
   /* -------------------------------------------------------------- mutasi */
+  /* Kegagalan simpan HARUS berisik. Dulu error dari server ditelan diam-diam
+     lalu pemanggilnya tetap menampilkan toast "tersimpan" — data hilang tanpa
+     ada yang tahu. Sekarang error dicatat, disiarkan, lalu dilempar ulang
+     supaya rantai .then() pemanggil tidak jalan dan tidak ada toast palsu. */
+  function gagal(e) {
+    state.error = e.message;
+    global.dispatchEvent(new CustomEvent('store:gagal', { detail: { pesan: e.message } }));
+    throw e;
+  }
+
   /* Semua mutasi: update state dulu (optimistic), lalu kirim ke sheet. */
   function kirim(tab, aksi, row) {
     simpanLokal();
     if (!terhubung()) return Promise.resolve();
     state.syncing = true;
     global.dispatchEvent(new CustomEvent('store:sync', { detail: { syncing: true } }));
+    function selesai() {
+      state.syncing = false;
+      global.dispatchEvent(new CustomEvent('store:sync', { detail: { syncing: false } }));
+    }
     return panggil('mutate', { tab: tab, aksi: aksi, row: row })
-      .catch(function (e) { state.error = e.message; })
-      .then(function () {
-        state.syncing = false;
-        global.dispatchEvent(new CustomEvent('store:sync', { detail: { syncing: false } }));
-      });
+      .then(selesai, function (e) { selesai(); return gagal(e); });
   }
 
   function tambah(tab, row) {
@@ -274,14 +284,14 @@
     state.data[tab] = rows;
     simpanLokal();
     if (!terhubung()) return Promise.resolve();
-    return panggil('replace', { tab: tab, rows: rows }).catch(function (e) { state.error = e.message; });
+    return panggil('replace', { tab: tab, rows: rows }).catch(gagal);
   }
 
   function simpanConfig(patch) {
     Object.assign(state.data.config, patch);
     simpanLokal();
     if (!terhubung()) return Promise.resolve();
-    return panggil('config', { config: state.data.config }).catch(function (e) { state.error = e.message; });
+    return panggil('config', { config: state.data.config }).catch(gagal);
   }
 
   function resetLokal() {

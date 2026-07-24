@@ -217,33 +217,74 @@
      Nominal bulanan disebar RATA ke seluruh hari bulan itu (beda dari target
      penjualan yang pakai pola campaign — pengeluaran tidak ikut pola 8.8).
      Override harian menimpa nilai tanggal spesifik, persis seperti target. */
-  function petaRencana(data, tanggalList, cutoff) {
+  /* skenarioId menentukan angka mana yang dipakai untuk pos yang boleh beda
+     antar skenario (CFG.COA_SKENARIO). Pos lain selalu memakai baris dasar
+     (kolom skenario kosong / 'optimis') apa pun skenario yang aktif — itu
+     komitmen tetap. Pos yang ikut skenario tapi belum diisi untuk skenario
+     ini juga jatuh balik ke angka dasar, jadi grid yang belum disentuh tidak
+     tiba-tiba jadi nol. */
+  function petaRencana(data, tanggalList, cutoff, skenarioId) {
     var peta = {};
     var rb = data.rencanaBulanan || [], rh = data.rencanaHarian || [], i;
+    var skAktif = String(skenarioId || 'optimis').toLowerCase();
 
-    /* map[coa][tanggal] = nominal */
+    function skBaris(r) {
+      var s = String(r.skenario || '').trim().toLowerCase();
+      return (!s || s === 'optimis') ? 'dasar' : s;
+    }
+    /* Baris ini dipakai untuk skenario aktif? */
+    function terpakai(r) {
+      var s = skBaris(r);
+      if (!CFG.coaIkutSkenario(r.coa)) return s === 'dasar';
+      if (skAktif === 'optimis') return s === 'dasar';
+      return s === skAktif || s === 'dasar';   /* 'dasar' = cadangan */
+    }
+    /* Urutan menang, dari paling lemah ke paling kuat:
+         0 dasar bulanan · 1 dasar harian · 2 skenario bulanan · 3 skenario harian
+       Angka skenario selalu mengalahkan angka dasar — termasuk mengalahkan
+       jadwal harian dasar. Kalau tidak begitu, rencana bulanan pesimis akan
+       tercampur dengan jadwal harian dasar di tanggal yang tidak terisi, dan
+       hasilnya bukan angka siapa-siapa. */
+    function peringkat(r, harian) {
+      return (skBaris(r) === 'dasar' ? 0 : 2) + (harian ? 1 : 0);
+    }
+
+    /* map[coa][tanggal] = { nominal, rank, ... } */
     var map = {};
-    function set(coa, tgl, nominal, sumber, keterangan) {
+    function set(coa, tgl, nominal, keterangan, rank) {
       if (!map[coa]) map[coa] = {};
-      map[coa][tgl] = { nominal: nominal, sumber: sumber, keterangan: keterangan || '' };
+      var ada = map[coa][tgl];
+      if (ada && ada.rank > rank) return;
+      map[coa][tgl] = { nominal: nominal, sumber: 'rencana', keterangan: keterangan || '', rank: rank };
     }
 
     /* 1. sebar rata dari rencana bulanan */
     for (i = 0; i < rb.length; i++) {
       var r = rb[i];
       var nominal = Number(r.nominal) || 0;
-      if (!nominal || !r.coa) continue;
+      if (!nominal || !r.coa || !terpakai(r)) continue;
       var bln = bulanKey(r.bulan);
       var tgls = tanggalBulan(bln), per = Math.round(nominal / tgls.length), j;
-      for (j = 0; j < tgls.length; j++) set(r.coa, tgls[j], per, 'rencana', r.keterangan);
+      var rkB = peringkat(r, false);
+      for (j = 0; j < tgls.length; j++) set(r.coa, tgls[j], per, r.keterangan, rkB);
     }
 
-    /* 2. override harian menang */
+    /* 2. jadwal harian */
     for (i = 0; i < rh.length; i++) {
       var h = rh[i];
-      var n = Number(h.nominal) || 0;
-      if (!h.coa) continue;
-      set(h.coa, String(h.tanggal).slice(0, 10), n, 'rencana', h.keterangan);
+      if (!h.coa || !terpakai(h)) continue;
+      set(h.coa, String(h.tanggal).slice(0, 10), Number(h.nominal) || 0, h.keterangan, peringkat(h, true));
+    }
+
+    /* 3. Rencana bulanan skenario menutup SELURUH bulan: tanggal yang tidak
+       disebut jadwal hariannya tetap memakai sebaran rata, dan tanggal yang
+       tadinya diisi jadwal harian dasar tidak boleh nyempil. Sudah dijamin
+       oleh peringkat di atas — langkah ini hanya membuang sisa nol. */
+    for (var ck in map) {
+      if (!map.hasOwnProperty(ck)) continue;
+      for (var tk in map[ck]) {
+        if (map[ck].hasOwnProperty(tk) && !map[ck][tk].nominal) delete map[ck][tk];
+      }
     }
 
     /* 3. rakit per tanggal yang diminta */
@@ -265,6 +306,35 @@
       }
     }
     return peta;
+  }
+
+  /* Bulan mana saja yang PENGELUARANNYA sudah dimodelkan.
+     Dipakai untuk menolak merangkai saldo lewat bulan yang cuma punya sisi
+     pemasukan. Bulan begitu selalu menaikkan saldo tanpa ada yang keluar, jadi
+     saldo pembuka periode berikutnya jadi terlalu besar. Recurring, biaya
+     variabel, dan baseline berlaku di semua bulan, jadi kalau salah satunya
+     ada, seluruh bulan dianggap tercakup. */
+  function bulanBerpengeluaran(data, cfg) {
+    var out = {}, semua = false, i;
+    var rec = data.recurring || [], vr = data.variabel || [];
+    for (i = 0; i < rec.length; i++) if (rec[i].aktif && (Number(rec[i].nominal) || 0)) semua = true;
+    if (cfg && cfg.pakaiVariabel) {
+      for (i = 0; i < vr.length; i++) if (vr[i].aktif && (Number(vr[i].persen) || 0)) semua = true;
+    }
+    if (cfg && cfg.pakaiBaseline) {
+      var bl = hitungBaseline(data, cfg);
+      for (var k in bl) if (bl.hasOwnProperty(k) && bl[k]) semua = true;
+    }
+    if (semua) return { semua: true, punya: function () { return true; } };
+
+    var rb = data.rencanaBulanan || [], rh = data.rencanaHarian || [], rab = data.rab || [];
+    for (i = 0; i < rb.length; i++) if ((Number(rb[i].nominal) || 0)) out[bulanKey(rb[i].bulan)] = true;
+    for (i = 0; i < rh.length; i++) if ((Number(rh[i].nominal) || 0)) out[bulanKey(rh[i].tanggal)] = true;
+    for (i = 0; i < rab.length; i++) {
+      var t = rab[i].tanggalRencana || rab[i].bulan;
+      if (t && (Number(rab[i].total) || 0)) out[bulanKey(t)] = true;
+    }
+    return { semua: false, punya: function (b) { return !!out[b]; } };
   }
 
   /* Kategori yang punya rencana bulanan — dipakai untuk mengecualikan baseline
@@ -472,6 +542,14 @@
     var punyaSaldoAwal = (Number(cfg.saldoAwal) || 0) > 0;
     if (!punyaSaldoAwal) mulaiWalk = dari;
 
+    /* Bulan yang cuma punya sisi pemasukan tidak boleh ikut merangkai saldo.
+       Contoh nyata: saldo awal ditandai 24 Juli, target penjualan harian ada
+       untuk Juli, tapi rencana pengeluaran baru mulai 1 Agustus. Tanpa penjaga
+       ini, 25–31 Juli dihitung sebagai tujuh hari pemasukan tanpa pengeluaran
+       dan saldo pembuka Agustus melonjak dari Rp 1,1 M jadi Rp 3,7 M. */
+    var cakupKeluar = bulanBerpengeluaran(data, cfg);
+    var bulanCelah = {};
+
     var tanggalList = rentang(mulaiWalk, sampai);   /* dihitung */
     var tampilDari = dari;                          /* ditampilkan */
 
@@ -485,7 +563,7 @@
     var aktual = petaAktual(data);
     var rab = petaRab(data, cutoff);
     var recur = petaRecurring(data, tanggalList, cutoff);
-    var rencana = petaRencana(data, tanggalList, cutoff);
+    var rencana = petaRencana(data, tanggalList, cutoff, sk.id);
     var vari = petaVariabel(data, cfg, gmv, tanggalList, 1, cutoff);
     var baseline = hitungBaseline(data, cfg);
     var baselineItem = [];
@@ -521,6 +599,13 @@
 
       var tampil = tgl >= tampilDari;      /* hari sebelum ini cuma buat merangkai saldo */
       if (tampil && !hari.length) saldoAwalPeriode = saldo;
+
+      /* Hari pra-periode di bulan yang pengeluarannya belum dimodelkan:
+         saldo dibiarkan datar. Menghitung pemasukannya saja pasti salah arah. */
+      if (!tampil && !isAktual && !cakupKeluar.punya(bulanKey(tgl))) {
+        bulanCelah[bulanKey(tgl)] = true;
+        continue;
+      }
 
       if (isAktual) {
         var a = aktual[tgl];
@@ -642,7 +727,10 @@
         puncakMasukProyeksi: puncakMasukP,
         puncakKeluarProyeksi: puncakKeluarP,
         hariBahayaProyeksi: bahayaP,
-        hariBahayaLalu: bahayaLalu
+        hariBahayaLalu: bahayaLalu,
+        /* bulan sebelum periode yang dilewati karena pengeluarannya belum ada;
+           UI memakainya untuk memberi tahu kenapa saldo pembuka terlihat datar */
+        bulanCelah: Object.keys(bulanCelah).sort()
       }
     };
   }

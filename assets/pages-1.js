@@ -120,6 +120,8 @@
       /* Belum ada saldo awal → jangan tebak-tebakan, minta angkanya langsung. */
       if (!(Number(cfg().saldoAwal) > 0)) root.appendChild(kartuIsiSaldo(f, ulang));
 
+      if (r.bulanCelah && r.bulanCelah.length) root.appendChild(kartuCelah(r.bulanCelah));
+
       /* ---------- vonis: kesimpulan dulu, grafik belakangan ---------- */
       var v = vonis(aktif, cfg());
       if (v) root.appendChild(kartuVonis(v, ulang));
@@ -280,6 +282,25 @@
      ditutup. Tanpa ini semua angka saldo tidak berarti, jadi formulirnya
      ditaruh langsung di halaman, bukan disembunyikan di Pengaturan.
      ====================================================================== */
+  /* Ada bulan antara tanggal saldo awal dan periode ini yang belum punya
+     rencana pengeluaran. Bulan itu sengaja dilewati saat merangkai saldo —
+     kalau ikut dihitung, yang masuk cuma pemasukan dan saldo pembuka jadi
+     terlalu besar. Finance harus tahu ini, bukan cuma diam-diam dibetulkan. */
+  function kartuCelah(bulan) {
+    var nama = bulan.map(function (b) { return UI.namaBulan ? UI.namaBulan(b) : b; }).join(', ');
+    return el('div', { class: 'kartu kartu-celah' }, [
+      IK('info', 18),
+      el('div', null, [
+        el('div', { class: 'tebal', text: 'Saldo dirangkai datar melewati ' + nama }),
+        el('p', { class: 'muted', style: 'margin:4px 0 0',
+          text: 'Bulan itu punya target penjualan tapi belum punya rencana pengeluaran. '
+              + 'Kalau tetap dihitung, yang masuk hitungan cuma pemasukan, dan saldo pembuka '
+              + 'periode ini jadi lebih besar dari kenyataan. Isi Rencana Pengeluaran bulan '
+              + 'itu kalau mau ikut dihitung.' })
+      ])
+    ]);
+  }
+
   function kartuIsiSaldo(f, ulang) {
     /* default: hari terakhir bulan sebelum periode yang sedang dilihat */
     var tglDefault = E.tambahHari(f.dari, -1);
@@ -472,12 +493,29 @@
       }, el('span', { text: g.label })));
     });
 
+    /* Gabung vs Terpisah — cuma relevan kalau saldo dan arus sama-sama nyala,
+       karena di luar itu memang cuma ada satu panel. */
+    if (!APP.modeGrafik) APP.modeGrafik = 'pisah';
+    var gtCek = APP.garisTampil || { saldo: true, masuk: false, keluar: false };
+    var perluModeGrafik = tampilan.id === 'saldo' && gtCek.saldo && (gtCek.masuk || gtCek.keluar);
+
+    var pilihMode = el('div', { class: 'segmen segmen-mini' });
+    [{ id: 'pisah', label: 'Terpisah', ket: 'Dua panel bertumpuk — skala tiap garis benar' },
+     { id: 'gabung', label: 'Gabung', ket: 'Satu grafik, sumbu ganda — lebih padat' }
+    ].forEach(function (m) {
+      pilihMode.appendChild(el('button', {
+        class: 'segmen-btn' + (m.id === APP.modeGrafik ? ' aktif' : ''), type: 'button', title: m.ket,
+        onclick: function () { APP.modeGrafik = m.id; ulang(); }
+      }, el('span', { text: m.label })));
+    });
+
     var kepala = el('div', { class: 'kartu-head' }, [
       el('div', { class: 'kartu-judul' }, [
         el('h2', { text: tampilan.label }),
         el('p', { class: 'muted', text: tampilan.tanya })
       ]),
       el('div', { class: 'kartu-aksi' }, [
+        perluModeGrafik ? pilihMode : null,
         (tampilan.id === 'komposisi' || tampilan.id === 'jembatan') ? null : pilihGrain
       ])
     ]);
@@ -499,12 +537,26 @@
       if (!APP.garisTampil) APP.garisTampil = { saldo: true, masuk: false, keluar: false };
       var gt = APP.garisTampil;
 
-      /* Saldo (belasan M) dan arus harian (ratusan Jt) beda skala jauh. Kalau
-         dipaksa satu grafik, entah arusnya gepeng atau sumbunya ganda — dan
-         sumbu ganda bikin persilangan garis tidak punya arti. Solusinya dua
-         panel bertumpuk: skala masing-masing benar, sumbu tanggal tetap sama. */
+      /* Saldo (belasan M) dan arus harian (ratusan Jt) beda skala jauh, jadi
+         ada dua cara menampilkannya dan keduanya sah:
+           - Terpisah : dua panel bertumpuk, skala masing-masing benar, sumbu
+                        tanggal sama. Paling aman dibaca.
+           - Gabung   : satu grafik, sumbu ganda (saldo kiri, arus kanan).
+                        Lebih padat, tapi titik potong antar garis tidak punya
+                        arti karena skalanya beda — itu yang perlu diingat.
+         Finance yang pilih; defaultnya Terpisah. */
       var adaArus = gt.masuk || gt.keluar;
-      if (gt.saldo && adaArus) {
+      if (gt.saldo && adaArus && APP.modeGrafik === 'gabung') {
+        global.CHARTB.garisSaldo(plotWrap, {
+          seri: seri, aktif: APP.filter.skenario, grain: grain, cfg: cfg(), tinggi: 420,
+          semuaSkenario: false, tampil: gt,
+          onKlik: function (p) { if (p.hari && p.hari.length === 1) detailHari(p.hari[0], aktif); }
+        });
+        plotWrap.appendChild(el('p', { class: 'muted2', style: 'margin:6px 2px 0',
+          text: 'Sumbu ganda: arus kas harian dibaca di kiri, saldo di kanan. Karena skalanya '
+              + 'beda, titik potong antar garis tidak berarti apa-apa — pakai mode Terpisah '
+              + 'kalau mau membandingkan bentuknya.' }));
+      } else if (gt.saldo && adaArus) {
         var panelSaldo = el('div');
         var panelArus = el('div');
         plotWrap.appendChild(panelSaldo);

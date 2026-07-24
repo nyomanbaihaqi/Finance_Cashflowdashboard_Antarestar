@@ -28,8 +28,10 @@ var SKEMA = {
   /* 'keterangan' menyimpan detail yang lebih halus dari COA-nya, misalnya
      BPJS di dalam pos gaji, atau PPN berjalan vs tunggakan di dalam pos PPN.
      Tanpa kolom ini detail itu hilang begitu diunggah. */
-  RencanaBulanan: ['id', 'bulan', 'coa', 'nominal', 'keterangan'],
-  RencanaHarian:  ['id', 'tanggal', 'coa', 'nominal', 'keterangan']
+  /* 'skenario' hanya dipakai pos yang boleh beda antar skenario (lihat
+     COA_SKENARIO di frontend). Kosong = angka dasar, dipakai semua skenario. */
+  RencanaBulanan: ['id', 'bulan', 'coa', 'nominal', 'keterangan', 'skenario'],
+  RencanaHarian:  ['id', 'tanggal', 'coa', 'nominal', 'keterangan', 'skenario']
 };
 
 /* Nama key di frontend → nama tab di spreadsheet */
@@ -302,7 +304,10 @@ function aksiReplace(tabKey, rows) {
 
 function aksiConfig(config) {
   var sh = ss().getSheetByName('Config');
-  if (sh.getLastRow() > 1) sh.deleteRows(2, sh.getLastRow() - 1);
+  /* clearContent, bukan deleteRows — alasannya sama seperti di aksiReplace:
+     header di-freeze, jadi menghapus seluruh baris sisanya ditolak Sheets. */
+  var isiLama = sh.getLastRow();
+  if (isiLama > 1) sh.getRange(2, 1, isiLama - 1, sh.getMaxColumns()).clearContent();
 
   var rows = [], k;
   for (k in config) {
@@ -312,7 +317,11 @@ function aksiConfig(config) {
     else if (v !== null && typeof v === 'object') v = JSON.stringify(v);
     rows.push([k, v === null || v === undefined ? '' : v]);
   }
-  if (rows.length) sh.getRange(2, 1, rows.length, 2).setNumberFormat('@').setValues(rows);
+  if (rows.length) {
+    var butuh = rows.length + 1;
+    if (sh.getMaxRows() < butuh) sh.insertRowsAfter(sh.getMaxRows(), butuh - sh.getMaxRows());
+    sh.getRange(2, 1, rows.length, 2).setNumberFormat('@').setValues(rows);
+  }
   catat('config', 'Config', rows.length + ' key');
   return { jumlah: rows.length };
 }

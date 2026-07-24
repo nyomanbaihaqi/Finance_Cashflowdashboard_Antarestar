@@ -12,7 +12,7 @@
      Kalau masih kosong → app jalan pakai data demo + localStorage.
      --------------------------------------------------------------------- */
   var CONN = {
-    APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbw5SBSplxcGY6g4voTpk9-6tZHnB5xZIi-avE0SgY4V85cxIfB_oZOjL0MAS3VxGIZ6/exec',                                        // <-- isi setelah deploy Web App
+    APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbyrYA-mMUoFrsUFLg_SMov0PPUXmnPTolSO72gtdZLOZxRc5fAJgt-roxtKAFlWoBty/exec',                                        // <-- isi setelah deploy Web App
     TOKEN: '',                                                  // opsional; samakan dgn TOKEN di Code.gs
     SHEET_ID: '1trHZ_CLBoA0Wl3vr9hIPgtKp2GRIF1asc-fWsxViPY8',   // Finance Dashboard
     SHEET_URL: 'https://docs.google.com/spreadsheets/d/1trHZ_CLBoA0Wl3vr9hIPgtKp2GRIF1asc-fWsxViPY8/edit'
@@ -96,10 +96,18 @@
      netto    : % GMV yang benar-benar jadi kas (setelah fee MP, retur, cancel)
      tipe     : marketplace | offline | b2b
      --------------------------------------------------------------------- */
-  /* netto 94,8% = faktor yang dipakai finance di sheet CASHFLOW PROJECTION
-     (baris "0.948"): porsi GMV yang benar-benar cair jadi kas setelah fee
-     marketplace, retur, dan cancel. Bisa diubah per channel di Pengaturan. */
-  var NETTO_MP = 94.8;
+  /* netto 73% = Cash Inflow ÷ Omzet dari analisa finance sendiri di sheet
+     CASHFLOW HARIAN, tab "Orderan & Sales" (momen Lebaran 1 Mar–4 Apr:
+     omzet 5.701.659.141, cash inflow 4.164.424.525 → 0,7304).
+
+     SEBELUMNYA 94,8%, dan itu keliru: angka 0.948 di sheet adalah fee
+     marketplace saja, bukan konversi GMV→kas. Akibatnya proyeksi kelewat
+     optimis ~1,3×. Backtest Feb–Jul 2026: kas penjualan nyata rata-rata
+     Rp 8,53 M/bulan, sedangkan versi 94,8% meramal Rp 13,69 M/bulan.
+
+     Angka paling benar tetap datang dari data sendiri — begitu Aktual Harian
+     terisi, pakai "Kalibrasi netto ke realisasi" di Proyeksi Kas. */
+  var NETTO_MP = 73;
 
   var CHANNELS = [
     { id: 'shopee_mall',  nama: 'Shopee Mall',       coa: 'in_shopee',    tipe: 'marketplace', lag: 5, netto: NETTO_MP },
@@ -248,6 +256,17 @@
   ];
 
   /* ---------------------------------------------------------------------
+     POS PENGELUARAN YANG BOLEH BEDA ANTAR SKENARIO.
+     Pengeluaran lain dianggap komitmen tetap: nominalnya sama di ketiga
+     skenario, jadi cukup diisi sekali di grid Optimis. Dua pos ini ikut
+     naik-turun mengikuti penjualan — belanja stok dan belanja iklan memang
+     direm kalau omset meleset.
+     Pos di luar daftar ini SENGAJA tidak bisa dibedakan, supaya tidak ada
+     angka skenario yang diam-diam menyimpang tanpa alasan.
+     --------------------------------------------------------------------- */
+  var COA_SKENARIO = ['out_hutang_supplier', 'out_iklan'];
+
+  /* ---------------------------------------------------------------------
      DEFAULT SETTING (bisa diubah di halaman Pengaturan → simpan ke tab Config)
      --------------------------------------------------------------------- */
   var DEFAULT_CONFIG = {
@@ -304,6 +323,9 @@
     BARIS_ABAIKAN: BARIS_ABAIKAN,
     POLA: POLA,
     SKENARIO: SKENARIO,
+    COA_SKENARIO: COA_SKENARIO,
+    /* true = pos ini boleh punya angka sendiri per skenario */
+    coaIkutSkenario: function (id) { return COA_SKENARIO.indexOf(id) >= 0; },
     DEFAULT_CONFIG: DEFAULT_CONFIG,
     SEED_RECURRING: SEED_RECURRING,
     SEED_VARIABEL: SEED_VARIABEL,

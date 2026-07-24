@@ -15,46 +15,70 @@
   function d() { return S.data(); }
   function cfg() { return S.data().config; }
 
-  function rowBulan(bulan, coa) {
-    return d().rencanaBulanan.filter(function (x) { return x.bulan === bulan && x.coa === coa; })[0];
+  /* 'dasar' = baris tanpa kolom skenario; dipakai semua skenario. Hanya pos di
+     CFG.COA_SKENARIO yang boleh punya baris khusus moderate/pesimis. */
+  function skBaris(r) {
+    var s = String(r.skenario || '').trim().toLowerCase();
+    return (!s || s === 'optimis') ? 'dasar' : s;
   }
-  function rowsHarian(bulan, coa) {
+  function skKunci(sk) {
+    return (!sk || sk === 'optimis') ? 'dasar' : sk;
+  }
+
+  function rowBulan(bulan, coa, sk) {
+    var k = skKunci(sk);
+    return d().rencanaBulanan.filter(function (x) {
+      return x.bulan === bulan && x.coa === coa && skBaris(x) === k;
+    })[0];
+  }
+  function rowsHarian(bulan, coa, sk) {
+    var k = skKunci(sk);
     return d().rencanaHarian.filter(function (x) {
-      return String(x.tanggal).slice(0, 7) === bulan && x.coa === coa;
+      return String(x.tanggal).slice(0, 7) === bulan && x.coa === coa && skBaris(x) === k;
     });
   }
-  function totalHarian(bulan, coa) {
-    return rowsHarian(bulan, coa).reduce(function (a, x) { return a + (Number(x.nominal) || 0); }, 0);
+  function totalHarian(bulan, coa, sk) {
+    return rowsHarian(bulan, coa, sk).reduce(function (a, x) { return a + (Number(x.nominal) || 0); }, 0);
   }
 
   /* Nilai efektif satu sel: rencana bulanan kalau ada, kalau tidak jumlah
      jadwal harian bulan itu. Ini yang bikin data impor harian ikut kelihatan
      & terhitung di grid, bukan cuma di forecast. */
-  function nilaiEfektif(bulan, coa) {
-    var rb = rowBulan(bulan, coa);
+  function nilaiEfektif(bulan, coa, sk) {
+    var rb = rowBulan(bulan, coa, sk);
     if (rb) return Number(rb.nominal) || 0;
-    return totalHarian(bulan, coa);
+    return totalHarian(bulan, coa, sk);
   }
-  function sumberSel(bulan, coa) {
-    if (rowBulan(bulan, coa)) return 'bulanan';
-    if (rowsHarian(bulan, coa).length) return 'harian';
+  function sumberSel(bulan, coa, sk) {
+    if (rowBulan(bulan, coa, sk)) return 'bulanan';
+    if (rowsHarian(bulan, coa, sk).length) return 'harian';
     return '';
   }
 
-  function simpanBulan(bulan, coa, nominal) {
-    var ada = rowBulan(bulan, coa);
+  /* Angka yang benar-benar dipakai forecast untuk skenario ini: isian sendiri
+     kalau ada, kalau belum diisi jatuh balik ke angka dasar. */
+  function nilaiDipakai(bulan, coa, sk) {
+    if (skKunci(sk) === 'dasar' || !CFG.coaIkutSkenario(coa)) return nilaiEfektif(bulan, coa, 'dasar');
+    if (sumberSel(bulan, coa, sk)) return nilaiEfektif(bulan, coa, sk);
+    return nilaiEfektif(bulan, coa, 'dasar');
+  }
+
+  function simpanBulan(bulan, coa, nominal, sk) {
+    var ada = rowBulan(bulan, coa, sk);
     if (ada) {
       if (!nominal) return S.hapus('rencanaBulanan', ada.id);
       return S.ubah('rencanaBulanan', ada.id, { nominal: nominal });
     }
     if (!nominal) return Promise.resolve();
-    return S.tambah('rencanaBulanan', { bulan: bulan, coa: coa, nominal: nominal });
+    var baris = { bulan: bulan, coa: coa, nominal: nominal, keterangan: '' };
+    if (skKunci(sk) !== 'dasar') baris.skenario = sk;
+    return S.tambah('rencanaBulanan', baris);
   }
 
   /* Hapus semua jadwal harian satu bulan+kategori (dipakai saat sel harian
      diubah/dikosongkan dari grid bulanan). */
-  function hapusHarian(bulan, coa) {
-    var rows = rowsHarian(bulan, coa);
+  function hapusHarian(bulan, coa, sk) {
+    var rows = rowsHarian(bulan, coa, sk);
     return rows.reduce(function (p, r) { return p.then(function () { return S.hapus('rencanaHarian', r.id); }); },
       Promise.resolve());
   }
@@ -108,92 +132,135 @@
         UI.btn('Override harian', { kecil: true, ikon: 'calendar', onKlik: function () { editorHarian(ulang); } })
       ]));
 
-      var thead = el('thead', null, el('tr', null,
-        [el('th', { class: 'kolom-beku', text: 'KATEGORI' })].concat(bulanList.map(function (b) {
-          return el('th', { class: 'kanan', text: UI.namaBulanPendek(b) });
-        })).concat([el('th', { class: 'kanan', text: 'TOTAL' })])));
+      root.appendChild(UI.seksi('Rencana pengeluaran ' + tahun + ' per kategori',
+        'Klik sel untuk isi nominal sebulan. Geser ke samping untuk bulan berikutnya. ' +
+        'Angka di sini berlaku untuk ketiga skenario, kecuali pos yang di bawah diisi sendiri.',
+        gridRencana(bulanList, CFG.COA_OUT, 'dasar', ulang)));
 
-      var tbody = el('tbody');
-      var totalKolom = {}; bulanList.forEach(function (b) { totalKolom[b] = 0; });
+      /* --- grid tambahan: hanya pos yang boleh beda antar skenario --- */
+      var coaSk = CFG.COA_OUT.filter(function (c) { return CFG.coaIkutSkenario(c.id); });
+      root.appendChild(el('div', { class: 'alert alert-biru' }, [
+        IK('info', 17),
+        el('div', { html: 'Dua grid di bawah cuma buat <b>' +
+          coaSk.map(function (c) { return c.nama; }).join('</b> dan <b>') +
+          '</b> — dua pos yang wajar direm kalau omset meleset. Pos lain nominalnya ' +
+          '<b>sama di ketiga skenario</b>, cukup diisi di grid atas. Sel yang dibiarkan ' +
+          'kosong otomatis <b>ikut angka grid atas</b>, bukan jadi nol.' })
+      ]));
 
-      CFG.COA_OUT.forEach(function (c) {
-        var totalBaris = 0;
-        var sel = bulanList.map(function (b) {
-          var nilai = nilaiEfektif(b, c.id);
-          var sumber = sumberSel(b, c.id);
-          totalBaris += nilai; totalKolom[b] += nilai;
-          var jmlHari = sumber === 'harian' ? rowsHarian(b, c.id).length : 0;
-          var inp = el('input', {
-            class: 'sel-inp' + (nilai ? (sumber === 'harian' ? ' sel-harian' : ' sel-manual') : ' sel-kosong'),
-            value: nilai ? UI.grup(nilai) : '', placeholder: '0',
-            'aria-label': c.nama + ' ' + UI.namaBulan(b),
-            title: sumber === 'harian'
+      ['moderate', 'pesimis'].forEach(function (sk) {
+        var s = CFG.SKENARIO.filter(function (x) { return x.id === sk; })[0];
+        var kartu = UI.seksi('Rencana pengeluaran — ' + s.nama,
+          'Kosongkan sel kalau mau ikut angka grid utama.',
+          gridRencana(bulanList, coaSk, sk, ulang));
+        kartu.classList.add('kartu-skenario');
+        kartu.style.borderLeftColor = s.warna;
+        root.appendChild(kartu);
+      });
+    }
+  };
+
+  /* Satu grid rencana. sk = 'dasar' | 'moderate' | 'pesimis'.
+     Untuk grid skenario, sel kosong berarti "ikut angka dasar" — dan itu
+     ditampilkan sebagai angka abu-abu supaya finance tetap lihat berapa yang
+     sebenarnya dipakai forecast, bukan cuma kotak kosong. */
+  function gridRencana(bulanList, coaList, sk, ulang) {
+    var kunci = skKunci(sk);
+    var thead = el('thead', null, el('tr', null,
+      [el('th', { class: 'kolom-beku', text: 'KATEGORI' })].concat(bulanList.map(function (b) {
+        return el('th', { class: 'kanan', text: UI.namaBulanPendek(b) });
+      })).concat([el('th', { class: 'kanan', text: 'TOTAL' })])));
+
+    var tbody = el('tbody');
+    var totalKolom = {}; bulanList.forEach(function (b) { totalKolom[b] = 0; });
+
+    coaList.forEach(function (c) {
+      var totalBaris = 0;
+      var sel = bulanList.map(function (b) {
+        var nilai = nilaiEfektif(b, c.id, kunci);
+        var sumber = sumberSel(b, c.id, kunci);
+        var dipakai = nilaiDipakai(b, c.id, kunci);
+        var warisan = kunci !== 'dasar' && !sumber;   /* kosong → ikut grid dasar */
+
+        totalBaris += dipakai; totalKolom[b] += dipakai;
+        var jmlHari = sumber === 'harian' ? rowsHarian(b, c.id, kunci).length : 0;
+
+        var inp = el('input', {
+          class: 'sel-inp' + (warisan ? ' sel-warisan'
+            : (nilai ? (sumber === 'harian' ? ' sel-harian' : ' sel-manual') : ' sel-kosong')),
+          value: warisan ? (dipakai ? UI.grup(dipakai) : '') : (nilai ? UI.grup(nilai) : ''),
+          placeholder: '0',
+          'aria-label': c.nama + ' ' + UI.namaBulan(b),
+          title: warisan
+            ? 'ikut grid utama (' + UI.rpS(dipakai) + ') — ketik angka untuk pakai nilai sendiri'
+            : (sumber === 'harian'
               ? 'dari jadwal harian (' + jmlHari + ' tanggal) — klik "Override harian" untuk ubah per tanggal'
-              : (nilai ? 'disebar ' + UI.rpS(Math.round(nilai / E.jumlahHari(b))) + '/hari' : 'kosong')
-          });
-          inp.addEventListener('focus', function () { inp.select(); });
-          /* Klik kanan / tombol menu → pilih mau edit bulanan atau per tanggal */
-          inp.addEventListener('contextmenu', function (e) {
-            e.preventDefault();
-            menuSel(b, c, ulang);
-          });
-          inp.addEventListener('change', function () {
-            var baru = UI.parseUang(inp.value);
-            if (baru === nilai) return;                       /* tak berubah */
-
-            if (sumber === 'harian') {
-              /* sel ini punya jadwal harian rinci — jangan diam-diam ditimpa */
-              if (!baru) {
-                UI.konfirmasi('Hapus jadwal ' + c.nama + ' ' + UI.namaBulan(b) + '?',
-                  'Menghapus ' + jmlHari + ' tanggal (total ' + UI.rpS(nilai) + ') dari bulan ini. Tidak bisa diurungkan setelah tersimpan.',
-                  function () { hapusHarian(b, c.id).then(function () { UI.toast('Jadwal harian dihapus', 'sukses'); ulang(); }); },
-                  { labelYa: 'Ya, hapus' });
-                ulang();  /* kembalikan tampilan angka lama dulu */
-              } else {
-                UI.konfirmasi('Ganti jadi rata sebulan?',
-                  c.nama + ' ' + UI.namaBulan(b) + ' sekarang punya jadwal harian rinci (' + jmlHari +
-                  ' tanggal). Ubah jadi rata ' + UI.rpS(baru) + ' sebulan? Jadwal harian yang detail akan diganti.',
-                  function () {
-                    hapusHarian(b, c.id).then(function () { return simpanBulan(b, c.id, baru); })
-                      .then(function () { UI.toast('Diganti jadi rencana bulanan', 'sukses'); ulang(); });
-                  }, { labelYa: 'Ya, ganti' });
-                ulang();
-              }
-              return;
-            }
-            simpanBulan(b, c.id, baru).then(ulang);
-          });
-          return el('td', { class: 'kanan sel-aksi' }, [
-            inp,
-            el('button', {
-              class: 'sel-menu', type: 'button', title: 'Pilih cara edit',
-              'aria-label': 'Menu ' + c.nama + ' ' + UI.namaBulan(b),
-              onclick: function (e) { e.stopPropagation(); menuSel(b, c, ulang); }
-            }, IK('chevron', 11))
-          ]);
+              : (nilai ? 'disebar ' + UI.rpS(Math.round(nilai / E.jumlahHari(b))) + '/hari' : 'kosong'))
         });
-        tbody.appendChild(el('tr', null,
-          [el('td', { class: 'kolom-beku' }, el('div', null, [
-            el('div', { class: 'tebal', text: c.nama }),
-            el('div', { class: 'muted2' }, [
-              el('span', { class: 'lg-dot', style: 'background:' + CFG.BUCKET[c.bucket].warna }),
-              el('span', { text: ' ' + CFG.BUCKET[c.bucket].label })
-            ])
-          ]))].concat(sel).concat([el('td', { class: 'kanan tebal', text: UI.rpS(totalBaris) })])));
+        inp.addEventListener('focus', function () { inp.select(); });
+        inp.addEventListener('contextmenu', function (e) {
+          e.preventDefault();
+          if (kunci === 'dasar') menuSel(b, c, ulang);
+        });
+        inp.addEventListener('change', function () {
+          var baru = UI.parseUang(inp.value);
+          if (warisan && baru === dipakai) { ulang(); return; }   /* tak ada yang berubah */
+          if (!warisan && baru === nilai) return;
+
+          if (sumber === 'harian') {
+            /* sel ini punya jadwal harian rinci — jangan diam-diam ditimpa */
+            if (!baru) {
+              UI.konfirmasi('Hapus jadwal ' + c.nama + ' ' + UI.namaBulan(b) + '?',
+                'Menghapus ' + jmlHari + ' tanggal (total ' + UI.rpS(nilai) + ') dari bulan ini. Tidak bisa diurungkan setelah tersimpan.',
+                function () { hapusHarian(b, c.id, kunci).then(function () { UI.toast('Jadwal harian dihapus', 'sukses'); ulang(); }); },
+                { labelYa: 'Ya, hapus' });
+              ulang();  /* kembalikan tampilan angka lama dulu */
+            } else {
+              UI.konfirmasi('Ganti jadi rata sebulan?',
+                c.nama + ' ' + UI.namaBulan(b) + ' sekarang punya jadwal harian rinci (' + jmlHari +
+                ' tanggal). Ubah jadi rata ' + UI.rpS(baru) + ' sebulan? Jadwal harian yang detail akan diganti.',
+                function () {
+                  hapusHarian(b, c.id, kunci).then(function () { return simpanBulan(b, c.id, baru, kunci); })
+                    .then(function () { UI.toast('Diganti jadi rencana bulanan', 'sukses'); ulang(); });
+                }, { labelYa: 'Ya, ganti' });
+              ulang();
+            }
+            return;
+          }
+          simpanBulan(b, c.id, baru, kunci).then(ulang);
+        });
+
+        var isi = [inp];
+        if (kunci === 'dasar') {
+          isi.push(el('button', {
+            class: 'sel-menu', type: 'button', title: 'Pilih cara edit',
+            'aria-label': 'Menu ' + c.nama + ' ' + UI.namaBulan(b),
+            onclick: function (e) { e.stopPropagation(); menuSel(b, c, ulang); }
+          }, IK('chevron', 11)));
+        }
+        return el('td', { class: 'kanan sel-aksi' }, isi);
       });
 
-      var grand = 0;
-      bulanList.forEach(function (b) { grand += totalKolom[b]; });
-      tbody.appendChild(el('tr', { class: 'total' },
-        [el('td', { class: 'kolom-beku', text: 'TOTAL PENGELUARAN' })].concat(bulanList.map(function (b) {
+      tbody.appendChild(el('tr', null,
+        [el('td', { class: 'kolom-beku' }, el('div', null, [
+          el('div', { class: 'tebal', text: c.nama }),
+          el('div', { class: 'muted2' }, [
+            el('span', { class: 'lg-dot', style: 'background:' + CFG.BUCKET[c.bucket].warna }),
+            el('span', { text: ' ' + CFG.BUCKET[c.bucket].label })
+          ])
+        ]))].concat(sel).concat([el('td', { class: 'kanan tebal', text: UI.rpS(totalBaris) })])));
+    });
+
+    var grand = 0;
+    bulanList.forEach(function (b) { grand += totalKolom[b]; });
+    tbody.appendChild(el('tr', { class: 'total' },
+      [el('td', { class: 'kolom-beku', text: kunci === 'dasar' ? 'TOTAL PENGELUARAN' : 'TOTAL 2 POS INI' })]
+        .concat(bulanList.map(function (b) {
           return el('td', { class: 'kanan', text: UI.rpS(totalKolom[b]) });
         })).concat([el('td', { class: 'kanan', text: UI.rpS(grand) })])));
 
-      root.appendChild(UI.seksi('Rencana pengeluaran ' + tahun + ' per kategori',
-        'Klik sel untuk isi nominal sebulan. Geser ke samping untuk bulan berikutnya.',
-        el('div', { class: 'tabel-wrap tabel-beku' }, el('table', { class: 'tabel tabel-grid' }, [thead, tbody]))));
-    }
-  };
+    return el('div', { class: 'tabel-wrap tabel-beku' }, el('table', { class: 'tabel tabel-grid' }, [thead, tbody]));
+  }
 
   /* Menu satu sel: pilih mau atur sebulan sekaligus atau per tanggal. */
   function menuSel(bulan, coa, ulang) {
