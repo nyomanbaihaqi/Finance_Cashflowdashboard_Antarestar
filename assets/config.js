@@ -12,7 +12,7 @@
      Kalau masih kosong → app jalan pakai data demo + localStorage.
      --------------------------------------------------------------------- */
   var CONN = {
-    APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwUdkWrO7BM4iiGxTtdN-P_n3HQkQDQdaitf4149NszAPunWjamL41g7s3sjzMFrXdm/exec',                                        // <-- isi setelah deploy Web App
+    APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbw5SBSplxcGY6g4voTpk9-6tZHnB5xZIi-avE0SgY4V85cxIfB_oZOjL0MAS3VxGIZ6/exec',                                        // <-- isi setelah deploy Web App
     TOKEN: '',                                                  // opsional; samakan dgn TOKEN di Code.gs
     SHEET_ID: '1trHZ_CLBoA0Wl3vr9hIPgtKp2GRIF1asc-fWsxViPY8',   // Finance Dashboard
     SHEET_URL: 'https://docs.google.com/spreadsheets/d/1trHZ_CLBoA0Wl3vr9hIPgtKp2GRIF1asc-fWsxViPY8/edit'
@@ -164,16 +164,9 @@
     youtube:     0.005
   };
 
-  /* Realisasi GMV 2026 (TARGET COMMERCIAL) — buat kalibrasi & badge achievement */
-  var ACHIEVE_2026 = {
-    '2026-01':  8075829821,
-    '2026-02':  7094428808,
-    '2026-03': 11800516469,
-    '2026-04': 13041961601,
-    '2026-05': 13476061285,
-    '2026-06': 13878727658,
-    '2026-07': 10305010206   // partial, s/d 22 Jul
-  };
+  /* Realisasi TIDAK dihardcode. Angka realisasi selalu dihitung dari data
+     Aktual Harian yang benar-benar diinput, supaya tidak pernah ada grafik
+     "realisasi" untuk bulan yang datanya belum dimasukkan. */
 
   /* ---------------------------------------------------------------------
      ALIAS IMPOR — nama pos di sheet lama yang tidak sama persis dengan COA.
@@ -273,7 +266,10 @@
     baselineHari:     30,             // jendela rata-rata (hari terakhir)
     baselineOverride: {},             // { coaId: nominal harian } — isian manual finance
     baselineOff:      [],             // coaId yang dimatikan dari baseline
-    coaTambahan:      []              // kategori pengeluaran custom: [{id,nama,bucket}]
+    coaTambahan:      [],             // kategori pengeluaran custom: [{id,nama,bucket}]
+    /* true = skenario itu HANYA memakai target yang diketik sendiri;
+       false = kosongnya ikut rumus (faktor × Optimis) */
+    skenarioMandiri:  { moderate: false, pesimis: false }
   };
 
   /* Recurring / fixed cost contoh — diganti lewat halaman Fixed Cost */
@@ -306,7 +302,6 @@
     PORSI_MP: PORSI_MP,
     ALIAS_IMPOR: ALIAS_IMPOR,
     BARIS_ABAIKAN: BARIS_ABAIKAN,
-    ACHIEVE_2026: ACHIEVE_2026,
     POLA: POLA,
     SKENARIO: SKENARIO,
     DEFAULT_CONFIG: DEFAULT_CONFIG,

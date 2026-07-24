@@ -179,8 +179,14 @@
       r.gmv = Number(r.gmv) || 0; r.tanggal = String(r.tanggal).slice(0, 10);
       r.skenario = String(r.skenario || 'optimis').trim().toLowerCase();
     });
-    d.rencanaBulanan.forEach(function (r) { r.nominal = Number(r.nominal) || 0; r.bulan = String(r.bulan).slice(0, 7); });
-    d.rencanaHarian.forEach(function (r) { r.nominal = Number(r.nominal) || 0; r.tanggal = String(r.tanggal).slice(0, 10); });
+    d.rencanaBulanan.forEach(function (r) {
+      r.nominal = Number(r.nominal) || 0; r.bulan = String(r.bulan).slice(0, 7);
+      r.keterangan = String(r.keterangan || '').trim();
+    });
+    d.rencanaHarian.forEach(function (r) {
+      r.nominal = Number(r.nominal) || 0; r.tanggal = String(r.tanggal).slice(0, 10);
+      r.keterangan = String(r.keterangan || '').trim();
+    });
 
     ['saldoAwal', 'ambangBahaya', 'ambangWaspada', 'lagDefault', 'kursRMB', 'kursUSD', 'horizonBulan', 'baselineHari']
       .forEach(function (k) { d.config[k] = Number(d.config[k]) || 0; });
@@ -190,6 +196,13 @@
     if (!d.config.baselineOverride || typeof d.config.baselineOverride !== 'object') d.config.baselineOverride = {};
     if (!Array.isArray(d.config.baselineOff)) d.config.baselineOff = [];
     if (!Array.isArray(d.config.coaTambahan)) d.config.coaTambahan = [];
+    if (!d.config.skenarioMandiri || typeof d.config.skenarioMandiri !== 'object') {
+      d.config.skenarioMandiri = { moderate: false, pesimis: false };
+    }
+    ['moderate', 'pesimis'].forEach(function (k) {
+      var v = d.config.skenarioMandiri[k];
+      d.config.skenarioMandiri[k] = (v === true || v === 'TRUE' || v === 'true');
+    });
 
     return d;
   }

@@ -21,18 +21,32 @@ Selama langkah ini belum dikerjakan, dashboard tetap jalan — cuma pakai
 2. Google minta izin → **Review permissions** → pilih akun → **Advanced** →
    *Go to (nama project) (unsafe)* → **Allow**.
    (Wajar: script ini memang butuh akses ke spreadsheet milik lu sendiri.)
-3. Setelah selesai, cek spreadsheet — sekarang ada 8 tab:
+3. Setelah selesai, cek spreadsheet — sekarang ada 10 tab:
 
    | Tab | Isi |
    |---|---|
-   | `Config` | saldo awal, ambang kas, lag, kurs, setelan channel |
+   | `Config` | saldo awal, ambang kas, lag, kurs, setelan channel, kategori custom |
    | `Actual` | realisasi kas harian (uang masuk & keluar) |
-   | `TargetBulanan` | target GMV per channel per bulan (dari digicom) |
-   | `TargetHarian` | override target per tanggal |
+   | `TargetBulanan` | target GMV per channel per bulan, per skenario |
+   | `TargetHarian` | override target per tanggal, per skenario |
    | `RAB` | pengajuan anggaran per divisi |
    | `Recurring` | fixed cost bulanan |
    | `Variabel` | biaya variabel (% dari omset) |
+   | `RencanaBulanan` | rencana pengeluaran per kategori per bulan |
+   | `RencanaHarian` | rencana pengeluaran per tanggal |
    | `Log` | audit trail semua perubahan |
+
+> `setupSekali` juga **memperbaiki header tab yang sudah ada** kalau skema
+> bertambah kolom. Jadi kalau nanti ada kolom baru, cukup jalankan ulang —
+> data lama tidak terhapus.
+
+### "Cannot call SpreadsheetApp.getUi() from this context"
+
+Kalau muncul pesan itu, **setup-nya tetap berhasil**. Yang gagal cuma popup
+pemberitahuan di akhir, karena popup hanya bisa muncul kalau fungsi dijalankan
+dari menu spreadsheet — bukan dari editor Apps Script. Cek tab-nya di
+spreadsheet, pasti sudah terbentuk. (Versi terbaru `Code.gs` sudah menahan
+error ini, jadi tidak muncul lagi.)
 
 ## 3. Deploy jadi Web App
 

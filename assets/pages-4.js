@@ -132,6 +132,11 @@
               : (nilai ? 'disebar ' + UI.rpS(Math.round(nilai / E.jumlahHari(b))) + '/hari' : 'kosong')
           });
           inp.addEventListener('focus', function () { inp.select(); });
+          /* Klik kanan / tombol menu → pilih mau edit bulanan atau per tanggal */
+          inp.addEventListener('contextmenu', function (e) {
+            e.preventDefault();
+            menuSel(b, c, ulang);
+          });
           inp.addEventListener('change', function () {
             var baru = UI.parseUang(inp.value);
             if (baru === nilai) return;                       /* tak berubah */
@@ -158,7 +163,14 @@
             }
             simpanBulan(b, c.id, baru).then(ulang);
           });
-          return el('td', { class: 'kanan' }, inp);
+          return el('td', { class: 'kanan sel-aksi' }, [
+            inp,
+            el('button', {
+              class: 'sel-menu', type: 'button', title: 'Pilih cara edit',
+              'aria-label': 'Menu ' + c.nama + ' ' + UI.namaBulan(b),
+              onclick: function (e) { e.stopPropagation(); menuSel(b, c, ulang); }
+            }, IK('chevron', 11))
+          ]);
         });
         tbody.appendChild(el('tr', null,
           [el('td', { class: 'kolom-beku' }, el('div', null, [
@@ -183,10 +195,70 @@
     }
   };
 
-  /* Override harian per kategori — mirror editorHarian target */
-  function editorHarian(ulang) {
-    var bulan = global.APP.hariIni.slice(0, 7);
-    var coa = CFG.COA_OUT[0].id;
+  /* Menu satu sel: pilih mau atur sebulan sekaligus atau per tanggal. */
+  function menuSel(bulan, coa, ulang) {
+    var nilai = nilaiEfektif(bulan, coa.id);
+    var sumber = sumberSel(bulan, coa.id);
+    var jmlHari = rowsHarian(bulan, coa.id).length;
+
+    var isi = el('div', { class: 'menu-sel' }, [
+      el('div', { class: 'menu-sel-info' }, [
+        el('div', { class: 'tebal', text: coa.nama }),
+        el('div', { class: 'muted2', text: UI.namaBulan(bulan) + ' · ' +
+          (nilai ? UI.rp(nilai) : 'belum diisi') +
+          (sumber === 'harian' ? ' · dari ' + jmlHari + ' tanggal' : '') })
+      ]),
+      el('button', { class: 'menu-opsi', type: 'button', onclick: function () {
+        m.tutup(); setTimeout(function () { editorBulanSatu(bulan, coa, ulang); }, 180);
+      } }, [
+        IK('grid', 18),
+        el('div', null, [
+          el('div', { class: 'mo-judul', text: 'Edit bulanan' }),
+          el('div', { class: 'mo-teks', text: 'Isi satu angka untuk sebulan — disebar rata ke tiap hari.' })
+        ])
+      ]),
+      el('button', { class: 'menu-opsi', type: 'button', onclick: function () {
+        m.tutup(); setTimeout(function () { editorHarian(ulang, bulan, coa.id); }, 180);
+      } }, [
+        IK('calendar', 18),
+        el('div', null, [
+          el('div', { class: 'mo-judul', text: 'Edit harian' }),
+          el('div', { class: 'mo-teks', text: 'Atur nominal per tanggal — buat gaji tanggal 28, DP di tanggal tertentu, dll.' })
+        ])
+      ])
+    ]);
+
+    var m = UI.modal('Atur ' + coa.nama, isi, [{ label: 'Batal', gaya: 'btn-ghost' }], { lebar: 'kecil' });
+  }
+
+  /* Editor cepat satu sel bulanan */
+  function editorBulanSatu(bulan, coa, ulang) {
+    var awal = rowBulan(bulan, coa.id) ? nilaiEfektif(bulan, coa.id) : 0;
+    var adaHarian = rowsHarian(bulan, coa.id).length;
+    var inp = UI.inputUang(awal);
+    var isi = el('div', null, [
+      adaHarian ? el('div', { class: 'alert alert-kuning', style: 'margin-bottom:12px' }, [
+        IK('alert', 16),
+        el('div', { text: 'Bulan ini punya jadwal harian ' + adaHarian + ' tanggal. Menyimpan angka bulanan akan menggantinya.' })
+      ]) : null,
+      UI.field('Nominal sebulan', inp, 'Disebar rata ke ' + E.jumlahHari(bulan) + ' hari. Bisa singkat: 450jt', { wajib: true })
+    ]);
+    UI.modal(coa.nama + ' · ' + UI.namaBulan(bulan), isi, [
+      { label: 'Batal', gaya: 'btn-ghost' },
+      { label: 'Simpan', gaya: 'btn-utama', aksi: function () {
+          var v = UI.nilaiUang(inp);
+          hapusHarian(bulan, coa.id)
+            .then(function () { return simpanBulan(bulan, coa.id, v); })
+            .then(function () { UI.toast('Tersimpan', 'sukses'); if (ulang) ulang(); });
+        } }
+    ], { lebar: 'kecil' });
+  }
+
+  /* Override harian per kategori — mirror editorHarian target.
+     bulanAwal & coaAwal opsional: dipakai saat dibuka dari menu sel. */
+  function editorHarian(ulang, bulanAwal, coaAwal) {
+    var bulan = bulanAwal || global.APP.hariIni.slice(0, 7);
+    var coa = coaAwal || CFG.COA_OUT[0].id;
     var wrap = el('div');
     var isi = el('div');
 
@@ -214,15 +286,29 @@
         inp.addEventListener('change', function () {
           var v = UI.parseUang(inp.value), p;
           if (ov) p = (v === per) ? S.hapus('rencanaHarian', ov.id) : S.ubah('rencanaHarian', ov.id, { nominal: v });
-          else p = S.tambah('rencanaHarian', { tanggal: t, coa: coa, nominal: v });
+          else p = S.tambah('rencanaHarian', { tanggal: t, coa: coa, nominal: v, keterangan: '' });
           p.then(function () { UI.toast('Override ' + UI.tglPendek(t) + ' tersimpan', 'sukses'); gambar(); if (ulang) ulang(); });
         });
+
+        /* Keterangan cuma muncul di tanggal yang benar-benar ada nominalnya,
+           supaya grid tidak jadi dua kali lebih tinggi karena hari kosong. */
+        var inKet = null;
+        if (ov) {
+          inKet = el('input', { class: 'sel-ket', value: ov.keterangan || '',
+            placeholder: CFG.namaCoa(coa), title: 'Keterangan detail — tampil di Agenda Kas & rincian harian' });
+          inKet.addEventListener('change', function () {
+            S.ubah('rencanaHarian', ov.id, { keterangan: inKet.value.trim() })
+              .then(function () { UI.toast('Keterangan tersimpan', 'sukses'); if (ulang) ulang(); });
+          });
+        }
+
         grid.appendChild(el('div', { class: 'hari-sel' }, [
           el('div', { class: 'hari-lbl' }, [
             el('span', { text: UI.tglPendek(t) }),
             ov ? el('span', { class: 'titik-manual', title: 'override manual' }) : null
           ]),
-          inp
+          inp,
+          inKet
         ]));
       });
 

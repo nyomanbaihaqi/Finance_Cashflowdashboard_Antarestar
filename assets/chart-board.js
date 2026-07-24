@@ -103,8 +103,12 @@
     var ganda = !!(tampilCfg.saldo && adaArus);   /* sumbu ganda */
 
     /* Padding dirampingkan supaya garis memakai hampir seluruh lebar kartu —
-       label sumbu cukup 52px, tidak perlu 72px. */
-    var padKiri = 52, padKanan = ganda ? 52 : 14, padAtas = 34, padBawah = 44;
+       label sumbu cukup 52px, tidak perlu 72px. Panel bertumpuk: panel atas
+       tidak menampilkan label tanggal (dipakai bersama panel bawah). */
+    var tanpaLabelX = !!opt.tanpaLabelX;
+    var padKiri = 52, padKanan = ganda ? 52 : 14;
+    var padAtas = opt.judulPanel ? 26 : 34;
+    var padBawah = tanpaLabelX ? 12 : 44;
     var plotW = lebar - padKiri - padKanan, plotH = tinggi - padAtas - padBawah;
 
     var i, s;
@@ -166,7 +170,7 @@
     function Y(v) { return Ysk(v, skS || skUtama); }
     function Ya(v) { return Ysk(v, ganda ? skA : skUtama); }
 
-    var svg = sv('svg', { class: 'plot', viewBox: '0 0 ' + lebar + ' ' + tinggi, width: '100%', height: tinggi });
+    var svg = sv('svg', { class: 'plot', viewBox: '0 0 ' + lebar + ' ' + tinggi, width: lebar, height: tinggi });
 
     /* zona bahaya (blok merah tipis di bawah ambang) */
     if (ambang) {
@@ -370,12 +374,21 @@
       svg.appendChild(sv('circle', { cx: X(n - 1), cy: Y(utama[n - 1].saldo), r: 4.5, fill: GARIS.saldo.warna }));
     }
 
-    /* label X */
-    var lompat = Math.max(1, Math.ceil(n / 12));
-    for (i = 0; i < n; i += lompat) {
-      var tx = sv('text', { x: X(i), y: tinggi - 20, class: 'ax-x', 'text-anchor': 'middle' });
-      tx.textContent = labelPeriode(utama[i], grain);
-      svg.appendChild(tx);
+    /* judul panel (dipakai saat grafik dipecah jadi beberapa panel) */
+    if (opt.judulPanel) {
+      var jp = sv('text', { x: padKiri - 8, y: padAtas - 10, class: 'ax-judul', 'text-anchor': 'end' });
+      jp.textContent = opt.judulPanel;
+      svg.appendChild(jp);
+    }
+
+    /* label X — panel atas melewatkannya karena berbagi sumbu dengan panel bawah */
+    if (!tanpaLabelX) {
+      var lompat = Math.max(1, Math.ceil(n / 12));
+      for (i = 0; i < n; i += lompat) {
+        var tx = sv('text', { x: X(i), y: tinggi - 20, class: 'ax-x', 'text-anchor': 'middle' });
+        tx.textContent = labelPeriode(utama[i], grain);
+        svg.appendChild(tx);
+      }
     }
 
     var hoverLine = sv('line', { x1: 0, y1: padAtas, x2: 0, y2: padAtas + plotH, class: 'hover-line', opacity: 0 });
@@ -443,7 +456,7 @@
     if (!data.length) { wadah.appendChild(UI.el('div', { class: 'kosong-plot', text: 'Belum ada data.' })); return; }
 
     var lebar = Math.max(lebarWadah(wadah), 520), tinggi = opt.tinggi || 340;
-    var padKiri = 72, padKanan = 26, padAtas = 26, padBawah = 52;
+    var padKiri = 52, padKanan = 14, padAtas = 30, padBawah = 40;
     var plotW = lebar - padKiri - padKanan, plotH = tinggi - padAtas - padBawah;
 
     var maks = 0, i;
@@ -454,17 +467,28 @@
 
     function Y(v) { return padAtas + plotH * (1 - v / yMax); }
 
-    var svg = sv('svg', { class: 'plot', viewBox: '0 0 ' + lebar + ' ' + tinggi, width: '100%', height: tinggi });
+    var svg = sv('svg', { class: 'plot', viewBox: '0 0 ' + lebar + ' ' + tinggi, width: lebar, height: tinggi });
 
     for (var v = 0; v <= yMax + step / 2; v += step) {
       var y = Y(v);
       svg.appendChild(sv('line', { x1: padKiri, y1: y, x2: lebar - padKanan, y2: y, class: 'grid' }));
-      var t = sv('text', { x: padKiri - 12, y: y + 4, class: 'ax-y' }); t.textContent = UI.angkaS(v);
+      var t = sv('text', { x: padKiri - 8, y: y + 4, class: 'ax-y' }); t.textContent = UI.angkaS(v);
       svg.appendChild(t);
     }
 
+    /* Batang memenuhi slotnya (celah 12%) supaya grafik mentok kiri-kanan,
+       sudut cuma dibulatkan tipis — tidak lancip, tidak juga kapsul. */
     var slot = plotW / data.length;
-    var w = Math.min(30, slot * 0.30);
+    var w = Math.max(2, slot * 0.44 - 1);
+    var radius = Math.min(2, w / 3);
+
+    /* Label angka & tanggal hanya digambar kalau muat — kalau dipaksa,
+       teksnya saling menimpa dan malah tidak terbaca sama sekali. */
+    var lebarLabelNilai = 44, lebarLabelTgl = 40;
+    var lompatNilai = Math.max(1, Math.ceil(lebarLabelNilai / slot));
+    var lompatTgl = Math.max(1, Math.ceil(lebarLabelTgl / slot));
+    var muatNilai = slot >= 26;
+
     var box = UI.el('div', { class: 'plot-box' }, svg);
     wadah.appendChild(box);
     var tip = buatTip(box);
@@ -474,26 +498,24 @@
       var hm = plotH * p.masuk / yMax, hk = plotH * p.keluar / yMax;
       var proy = p.tipe === 'proyeksi';
 
-      var rm = sv('rect', { x: cx - w - 3, y: Y(p.masuk), width: w, height: Math.max(hm, 0),
-        fill: '#10b981', rx: 4, opacity: proy ? 0.55 : 1 });
-      var rk = sv('rect', { x: cx + 3, y: Y(p.keluar), width: w, height: Math.max(hk, 0),
-        fill: '#e11d48', rx: 4, opacity: proy ? 0.55 : 1 });
-      svg.appendChild(rm); svg.appendChild(rk);
+      svg.appendChild(sv('rect', { x: cx - w - 0.5, y: Y(p.masuk), width: w, height: Math.max(hm, 0),
+        fill: '#059669', rx: radius, opacity: proy ? 0.62 : 1 }));
+      svg.appendChild(sv('rect', { x: cx + 0.5, y: Y(p.keluar), width: w, height: Math.max(hk, 0),
+        fill: '#dc2626', rx: radius, opacity: proy ? 0.62 : 1 }));
 
-      /* label selisih di atas pasangan batang */
-      var atas = Math.min(Y(p.masuk), Y(p.keluar)) - 8;
-      var tn = sv('text', { x: cx, y: atas, class: 'bar-net', 'text-anchor': 'middle',
-        fill: p.net >= 0 ? '#059669' : '#e11d48' });
-      tn.textContent = (p.net >= 0 ? '+' : '') + UI.angkaS(p.net);
-      svg.appendChild(tn);
+      /* selisih ditulis hanya kalau ada ruang & di posisi yang tidak bertabrakan */
+      if (muatNilai && idx % lompatNilai === 0) {
+        var atas = Math.min(Y(p.masuk), Y(p.keluar)) - 7;
+        var tn = sv('text', { x: cx, y: atas, class: 'bar-net', 'text-anchor': 'middle',
+          fill: p.net >= 0 ? '#059669' : '#dc2626' });
+        tn.textContent = (p.net >= 0 ? '+' : '') + UI.angkaS(p.net);
+        svg.appendChild(tn);
+      }
 
-      var tx = sv('text', { x: cx, y: tinggi - 26, class: 'ax-x', 'text-anchor': 'middle' });
-      tx.textContent = labelPeriode(p, grain);
-      svg.appendChild(tx);
-      if (proy) {
-        var tp = sv('text', { x: cx, y: tinggi - 13, class: 'ax-tag', 'text-anchor': 'middle' });
-        tp.textContent = 'proyeksi';
-        svg.appendChild(tp);
+      if (idx % lompatTgl === 0) {
+        var tx = sv('text', { x: cx, y: tinggi - 22, class: 'ax-x', 'text-anchor': 'middle' });
+        tx.textContent = labelPeriode(p, grain);
+        svg.appendChild(tx);
       }
 
       var hit = sv('rect', { x: cx - slot / 2, y: padAtas, width: slot, height: plotH, fill: 'transparent' });
@@ -511,10 +533,17 @@
       svg.appendChild(hit);
     });
 
+    var adaProyeksi = data.some(function (p) { return p.tipe === 'proyeksi'; });
+    var adaAktual = data.some(function (p) { return p.tipe === 'aktual'; });
     wadah.appendChild(UI.el('div', { class: 'legend' }, UI.el('div', { class: 'legend-grup' }, [
-      UI.el('span', { class: 'lg-dot', style: 'background:#10b981' }), UI.el('span', { text: 'Uang masuk' }),
-      UI.el('span', { class: 'lg-dot', style: 'background:#e11d48' }), UI.el('span', { text: 'Uang keluar' }),
-      UI.el('span', { class: 'muted2', text: '· angka di atas batang = surplus/defisit periode itu' })
+      UI.el('span', { class: 'lg-dot', style: 'background:#059669' }), UI.el('span', { text: 'Uang masuk' }),
+      UI.el('span', { class: 'lg-dot', style: 'background:#dc2626' }), UI.el('span', { text: 'Uang keluar' }),
+      (adaProyeksi && adaAktual)
+        ? UI.el('span', { class: 'muted2', text: '· batang pudar = proyeksi' })
+        : null,
+      muatNilai
+        ? UI.el('span', { class: 'muted2', text: '· angka di atas batang = surplus/defisit' })
+        : UI.el('span', { class: 'muted2', text: '· arahkan kursor ke batang untuk angka detailnya' })
     ])));
   }
 
@@ -624,7 +653,7 @@
     yMin = Math.floor(yMin / step) * step; yMax = Math.ceil(yMax / step) * step;
     function Y(v) { return padAtas + plotH * (1 - (v - yMin) / (yMax - yMin)); }
 
-    var svg = sv('svg', { class: 'plot', viewBox: '0 0 ' + lebar + ' ' + tinggi, width: '100%', height: tinggi });
+    var svg = sv('svg', { class: 'plot', viewBox: '0 0 ' + lebar + ' ' + tinggi, width: lebar, height: tinggi });
     for (var v = yMin; v <= yMax + step / 2; v += step) {
       var y = Y(v);
       svg.appendChild(sv('line', { x1: padKiri, y1: y, x2: lebar - padKanan, y2: y, class: 'grid' }));

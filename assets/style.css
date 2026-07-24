@@ -618,6 +618,16 @@ textarea.inp { min-height: 130px; resize: vertical; font-family: var(--mono); fo
 .hari-lbl { font-size: 10.5px; color: var(--teks3); display: flex; justify-content: space-between; align-items: center; }
 .titik-manual { width: 6px; height: 6px; border-radius: 50%; background: var(--aksen); }
 
+/* Keterangan detail di bawah nominal — sengaja tipis supaya nominal tetap
+   jadi angka yang paling menonjol di dalam sel. */
+.sel-ket {
+  width: 100%; font-size: 10px; padding: 3px 6px; color: var(--teks2);
+  border: 1px solid var(--garis); border-radius: 5px; background: var(--bg2);
+  text-overflow: ellipsis;
+}
+.sel-ket:focus { background: #fff; border-color: var(--aksen); color: var(--teks); outline: none; }
+.sel-ket::placeholder { color: var(--teks3); font-style: italic; }
+
 /* --------------------------------------------------------------- modal */
 .modal-bg {
   position: fixed; inset: 0; background: rgba(15,23,42,.44); backdrop-filter: blur(3px);
@@ -807,6 +817,50 @@ textarea.inp { min-height: 130px; resize: vertical; font-family: var(--mono); fo
   .isi-saldo-form { grid-template-columns: 1fr !important; }
 }
 
+/* ------------------------------------------------------- agenda kas */
+.agenda-ringkas {
+  display: flex; gap: 22px; flex-wrap: wrap; align-items: center;
+  padding: 10px 13px; margin-bottom: 12px;
+  background: var(--panel2); border: 1px solid var(--garis); border-radius: var(--r-m);
+}
+.agenda-ringkas > span { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
+.agenda-ringkas b { font-variant-numeric: tabular-nums; }
+.agenda-arah { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 650; }
+/* filter agenda: di layar sempit biarkan membungkus, jangan memaksa lebar */
+@media (max-width: 880px) {
+  .kartu-aksi .segmen { flex-wrap: wrap; width: 100%; }
+  .kartu-aksi .segmen-btn { flex: 1 1 auto; min-width: 0; }
+  .kartu-aksi .segmen-btn span { overflow: hidden; text-overflow: ellipsis; }
+  .agenda-ringkas { gap: 12px; }
+}
+.agenda-in { color: var(--hijau); }
+.agenda-out { color: var(--merah); }
+.tabel tr.agenda-baris-in td:first-child { box-shadow: inset 3px 0 0 #a7f3d0; }
+.tabel tr.agenda-baris-out td:first-child { box-shadow: inset 3px 0 0 #fecdd3; }
+
+/* --------------------------------------- menu sel (rencana pengeluaran) */
+.sel-aksi { position: relative; }
+.sel-menu {
+  position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+  border: 0; background: none; color: var(--teks3); cursor: pointer;
+  padding: 2px; border-radius: 4px; opacity: 0; transition: opacity var(--cepat);
+  display: flex; align-items: center;
+}
+.sel-aksi:hover .sel-menu, .sel-menu:focus-visible { opacity: 1; }
+.sel-menu:hover { background: var(--garis2); color: var(--teks); }
+
+.menu-sel { display: flex; flex-direction: column; gap: 8px; }
+.menu-sel-info { padding-bottom: 10px; border-bottom: 1px solid var(--garis2); }
+.menu-opsi {
+  display: flex; gap: 12px; align-items: flex-start; text-align: left; width: 100%;
+  padding: 13px 14px; border: 1px solid var(--garis); border-radius: var(--r-m);
+  background: #fff; cursor: pointer; transition: all var(--cepat);
+}
+.menu-opsi:hover { border-color: var(--aksen); background: var(--aksen-bg); }
+.menu-opsi > .ik { color: var(--aksen); margin-top: 2px; flex: none; }
+.mo-judul { font-weight: 700; font-size: 13.5px; }
+.mo-teks { font-size: 12px; color: var(--teks2); margin-top: 2px; line-height: 1.45; }
+
 /* --------------------------------------------- kartu grid per skenario */
 .kartu-skenario { border-left-width: 4px; }
 .ks-moderate { border-left-color: var(--aksen); }
@@ -850,6 +904,9 @@ textarea.inp { min-height: 130px; resize: vertical; font-family: var(--mono); fo
    kiri-kanan; label sumbu tetap muat karena padding-nya ada di dalam SVG. */
 .plot-slot { min-height: 200px; margin-left: -12px; margin-right: -12px; }
 .plot-slot > .legend { margin-left: 12px; margin-right: 12px; }
+/* Di layar sempit grafik punya lebar minimum supaya label tidak bertumpuk —
+   biarkan digeser ke samping, jangan diperkecil sampai tidak terbaca. */
+.plot-box { overflow-x: auto; overflow-y: hidden; }
 .titik-label { font-size: 10.5px; font-weight: 700; font-family: var(--font); }
 .bar-net { font-size: 10.5px; font-weight: 700; font-family: var(--font); }
 .ax-tag { fill: #b3bfd0; font-size: 9px; font-family: var(--font); }

@@ -229,7 +229,7 @@
       }
 
       /* ---------- chart dengan pilihan tampilan ---------- */
-      root.appendChild(panelGrafik(hasil, aktif, ulang));
+      panelGrafik(root, hasil, aktif, ulang);
 
       /* ---------- 3 kartu skenario ---------- */
       var g3 = el('div', { class: 'grid g3' });
@@ -245,7 +245,10 @@
               el('span', { class: 'pil-titik', style: 'background:' + sk.warna }),
               el('span', { text: sk.nama })
             ]),
-            isAktif ? UI.badge('AKTIF', 'oranye') : el('span', { class: 'muted2', text: '×' + sk.faktor.toFixed(2) })
+            isAktif ? UI.badge('AKTIF', 'oranye')
+              : el('span', { class: 'muted2',
+                  title: (cfg().skenarioMandiri || {})[sk.id] ? 'target diisi terpisah' : 'diturunkan dari Optimis',
+                  text: (cfg().skenarioMandiri || {})[sk.id] ? 'mandiri' : '×' + sk.faktor.toFixed(2) })
           ]),
           el('div', { class: 'sk-row' }, [el('span', { text: 'Penerimaan proyeksi' }), el('b', { class: 'hijau', text: UI.rpS(x.masukProyeksi) })]),
           el('div', { class: 'sk-row' }, [el('span', { text: 'Pengeluaran proyeksi' }), el('b', { class: 'merah', text: UI.rpS(x.keluarProyeksi) })]),
@@ -441,7 +444,7 @@
     { id: 'bulanan',  label: 'Bulanan' }
   ];
 
-  function panelGrafik(hasil, aktif, ulang) {
+  function panelGrafik(root, hasil, aktif, ulang) {
     var APP = global.APP;
     if (!APP.tampilanGrafik) APP.tampilanGrafik = 'saldo';
     /* default grain ikut panjang periode: 1 bulan → harian, >3 bulan → bulanan */
@@ -481,6 +484,11 @@
 
     var kartu = el('section', { class: 'kartu' }, [pilihTampilan, kepala, plotWrap]);
 
+    /* Kartu HARUS masuk DOM dulu sebelum grafik digambar. Kalau tidak,
+       lebar wadah terbaca 0 → chart memakai lebar cadangan → SVG di-letterbox
+       (kosong di kiri-kanan) dan pemetaan posisi kursor ke tanggal jadi meleset. */
+    root.appendChild(kartu);
+
     /* ---- gambar sesuai tampilan ---- */
     var grain = APP.grain;
     var seri = {};
@@ -491,11 +499,36 @@
       if (!APP.garisTampil) APP.garisTampil = { saldo: true, masuk: false, keluar: false };
       var gt = APP.garisTampil;
 
-      global.CHARTB.garisSaldo(plotWrap, {
-        seri: seri, aktif: APP.filter.skenario, grain: grain, cfg: cfg(), tinggi: 380,
-        semuaSkenario: true, tampil: gt,
-        onKlik: function (p) { if (p.hari && p.hari.length === 1) detailHari(p.hari[0], aktif); }
-      });
+      /* Saldo (belasan M) dan arus harian (ratusan Jt) beda skala jauh. Kalau
+         dipaksa satu grafik, entah arusnya gepeng atau sumbunya ganda — dan
+         sumbu ganda bikin persilangan garis tidak punya arti. Solusinya dua
+         panel bertumpuk: skala masing-masing benar, sumbu tanggal tetap sama. */
+      var adaArus = gt.masuk || gt.keluar;
+      if (gt.saldo && adaArus) {
+        var panelSaldo = el('div');
+        var panelArus = el('div');
+        plotWrap.appendChild(panelSaldo);
+        plotWrap.appendChild(panelArus);
+
+        global.CHARTB.garisSaldo(panelSaldo, {
+          seri: seri, aktif: APP.filter.skenario, grain: grain, cfg: cfg(), tinggi: 250,
+          semuaSkenario: false, tampil: { saldo: true, masuk: false, keluar: false },
+          judulPanel: 'SALDO KAS', tanpaLabelX: true,
+          onKlik: function (p) { if (p.hari && p.hari.length === 1) detailHari(p.hari[0], aktif); }
+        });
+        global.CHARTB.garisSaldo(panelArus, {
+          seri: seri, aktif: APP.filter.skenario, grain: grain, cfg: cfg(), tinggi: 190,
+          semuaSkenario: false, tampil: { saldo: false, masuk: gt.masuk, keluar: gt.keluar },
+          judulPanel: 'ARUS KAS HARIAN',
+          onKlik: function (p) { if (p.hari && p.hari.length === 1) detailHari(p.hari[0], aktif); }
+        });
+      } else {
+        global.CHARTB.garisSaldo(plotWrap, {
+          seri: seri, aktif: APP.filter.skenario, grain: grain, cfg: cfg(), tinggi: 380,
+          semuaSkenario: gt.saldo, tampil: gt,
+          onKlik: function (p) { if (p.hari && p.hari.length === 1) detailHari(p.hari[0], aktif); }
+        });
+      }
 
       /* saklar garis — matikan/nyalakan sesuai kebutuhan; skala Y ikut yang aktif */
       var G = global.CHARTB.GARIS;
@@ -537,12 +570,12 @@
               el('span', { text: 'Area hijau = surplus hari itu' }),
               el('span', { class: 'lg-dot', style: 'background:' + G.keluar.warna + ';opacity:.28' }),
               el('span', { text: 'Area merah = tekor hari itu' }),
-              gt.saldo ? el('span', { class: 'muted2', text: '· sumbu kiri arus, kanan saldo' }) : null
+              gt.saldo ? el('span', { class: 'muted2', text: '· dua panel, sumbu tanggal sama' }) : null
             ]);
           }
           if (gt.saldo && adaArus) {
             return el('div', { class: 'legend-grup' }, el('span', { class: 'muted2',
-              text: 'Sumbu ganda — kiri: arus kas harian, kanan: saldo.' }));
+              text: 'Panel atas saldo, panel bawah arus harian — skalanya masing-masing, tanggalnya sejajar.' }));
           }
           if (gt.saldo) {
             return el('div', { class: 'legend-grup' }, [
@@ -593,7 +626,7 @@
       global.CHARTB.jembatan(plotWrap, { data: langkah, tinggi: 380 });
     }
 
-    return kartu;
+    return kartu;   /* sudah ditambahkan ke root di atas */
   }
 
   /* Bandingkan rata-rata penerimaan harian aktual vs proyeksi. */
@@ -614,34 +647,80 @@
 
   /* Momen kas besar ke depan */
   function agendaKas(hasil, ulang) {
+    var AMBANG = 50000000;
     var baris = [];
+
     hasil.hari.filter(function (h) { return h.tipe === 'proyeksi'; }).forEach(function (h) {
+      /* PENGELUARAN: komitmen terjadwal, di luar belanja operasional harian */
       h.item.forEach(function (it) {
-        if (it.sumber === 'forecast' || it.sumber === 'baseline') return;
-        if (it.nominal < 50000000) return;
+        if (it.tipe !== 'out') return;
+        if (it.sumber === 'baseline') return;
+        if (it.nominal < AMBANG) return;
         baris.push({ tgl: h.tgl, label: it.label, coa: it.coa, nominal: it.nominal,
-                     tipe: it.tipe, saldo: h.saldo, sumber: it.sumber });
+                     tipe: 'out', saldo: h.saldo, sumber: it.sumber });
+      });
+
+      /* PEMASUKAN: hari panen — penerimaan penjualan yang jauh di atas biasa,
+         plus pemasukan non-penjualan yang memang dijadwalkan. */
+      h.item.forEach(function (it) {
+        if (it.tipe !== 'in') return;
+        if (it.nominal < AMBANG) return;
+        if (it.sumber === 'forecast') return;          /* ditangani terpisah di bawah */
+        baris.push({ tgl: h.tgl, label: it.label, coa: it.coa, nominal: it.nominal,
+                     tipe: 'in', saldo: h.saldo, sumber: it.sumber });
       });
     });
+
+    /* Puncak penerimaan penjualan: ambil hari yang masuknya >=1,5x rata-rata,
+       supaya daftar tidak dipenuhi penerimaan rutin yang nilainya mirip. */
+    var proy = hasil.hari.filter(function (h) { return h.tipe === 'proyeksi' && h.masuk > 0; });
+    if (proy.length) {
+      var rata = proy.reduce(function (a, h) { return a + h.masuk; }, 0) / proy.length;
+      proy.forEach(function (h) {
+        if (h.masuk < Math.max(AMBANG, rata * 1.5)) return;
+        baris.push({ tgl: h.tgl, label: 'Puncak penerimaan penjualan', coa: 'penjualan',
+                     nominal: h.masuk, tipe: 'in', saldo: h.saldo, sumber: 'forecast',
+                     ket: Math.round(h.masuk / rata * 10) / 10 + '× rata-rata harian' });
+      });
+    }
+
     baris.sort(function (a, b) { return a.tgl < b.tgl ? -1 : a.tgl > b.tgl ? 1 : b.nominal - a.nominal; });
 
     var SUMBER = { rab: ['RAB', 'biru'], recurring: ['Fixed cost', 'abu'], rencana: ['Rencana', 'oranye'],
-                   variabel: ['Variabel', 'kuning'], whatif: ['Simulasi', 'oranye'] };
+                   variabel: ['Variabel', 'kuning'], whatif: ['Simulasi', 'oranye'],
+                   forecast: ['Target jualan', 'hijau'] };
+
+    var APP = global.APP;
+    if (!APP.agendaArah) APP.agendaArah = 'semua';
+    var tampil = baris.filter(function (r) {
+      return APP.agendaArah === 'semua' || r.tipe === APP.agendaArah;
+    });
+
+    var totalIn = baris.filter(function (r) { return r.tipe === 'in'; })
+      .reduce(function (a, r) { return a + r.nominal; }, 0);
+    var totalOut = baris.filter(function (r) { return r.tipe === 'out'; })
+      .reduce(function (a, r) { return a + r.nominal; }, 0);
 
     var kolom = [
-      { judul: 'Tanggal', lebar: '128px', render: function (r) {
+      { judul: 'Tanggal', lebar: '124px', render: function (r) {
           return el('div', null, [
             el('div', { class: 'tebal nowrap', text: UI.tglPendek(r.tgl) }),
             el('div', { class: 'muted2', text: UI.relatif(r.tgl, global.APP.hariIni) })
           ]); },
         cariTeks: function (r) { return UI.tglPendek(r.tgl); } },
+      { judul: 'Arah', lebar: '104px', cari: false, render: function (r) {
+          return el('span', { class: 'agenda-arah agenda-' + r.tipe }, [
+            IK(r.tipe === 'in' ? 'arrowDown' : 'arrowUp', 13),
+            el('span', { text: r.tipe === 'in' ? 'Masuk' : 'Keluar' })
+          ]); } },
       { judul: 'Keterangan', render: function (r) {
           return el('div', null, [
             el('div', { text: r.label }),
-            el('div', { class: 'muted2', text: CFG.namaCoa(r.coa) })
+            el('div', { class: 'muted2', text: (r.coa === 'penjualan' ? 'Gabungan channel penjualan' : CFG.namaCoa(r.coa)) +
+              (r.ket ? ' · ' + r.ket : '') })
           ]); },
-        cariTeks: function (r) { return r.label + ' ' + CFG.namaCoa(r.coa); } },
-      { judul: 'Sumber', lebar: '110px', render: function (r) {
+        cariTeks: function (r) { return r.label + ' ' + (r.coa === 'penjualan' ? 'penjualan' : CFG.namaCoa(r.coa)); } },
+      { judul: 'Sumber', lebar: '118px', render: function (r) {
           var v = SUMBER[r.sumber] || ['—', 'abu'];
           return UI.badge(v[0], v[1]); },
         cariTeks: function (r) { return (SUMBER[r.sumber] || [''])[0]; } },
@@ -652,16 +731,36 @@
           return el('span', { class: r.saldo < cfg().ambangBahaya ? 'merah tebal' : '', text: UI.rpS(r.saldo) }); } }
     ];
 
+    var filter = UI.segmen([
+      { value: 'semua',  label: 'Semua (' + baris.length + ')' },
+      { value: 'in',     label: 'Pemasukan (' + baris.filter(function (r) { return r.tipe === 'in'; }).length + ')', ikon: 'arrowDown', kelas: 'seg-hijau' },
+      { value: 'out',    label: 'Pengeluaran (' + baris.filter(function (r) { return r.tipe === 'out'; }).length + ')', ikon: 'arrowUp', kelas: 'seg-merah' }
+    ], APP.agendaArah, function (v) { APP.agendaArah = v; ulang(); }, 'segmen-mini');
+
+    var ringkas = el('div', { class: 'agenda-ringkas' }, [
+      el('span', null, [IK('arrowDown', 13), el('b', { class: 'hijau', text: UI.rpS(totalIn) }), el('span', { class: 'muted2', text: 'akan masuk' })]),
+      el('span', null, [IK('arrowUp', 13), el('b', { class: 'merah', text: UI.rpS(totalOut) }), el('span', { class: 'muted2', text: 'akan keluar' })]),
+      el('span', null, [IK('scale', 13),
+        el('b', { class: (totalIn - totalOut) >= 0 ? 'hijau' : 'merah',
+          text: ((totalIn - totalOut) >= 0 ? '+' : '') + UI.rpS(totalIn - totalOut) }),
+        el('span', { class: 'muted2', text: 'selisih agenda' })])
+    ]);
+
     return UI.seksi('Agenda kas besar ke depan',
-      'Komitmen ≥ Rp 50 Jt dari RAB, fixed cost, dan simulasi — di luar belanja operasional harian.',
-      UI.tabel(kolom, baris, {
-        cari: baris.length > 8, cariPlaceholder: 'Cari keterangan atau pos…', maks: 25,
-        kosong: {
-          ikon: 'fileText', judul: 'Belum ada komitmen besar',
-          pesan: 'Belum ada RAB atau fixed cost ≥ Rp 50 Jt di periode ini. Proyeksi pengeluaran cuma dari baseline operasional harian.',
-          aksi: { label: 'Buat RAB', ikon: 'plus', onKlik: function () { global.INPUT.rabBaru(ulang); } }
-        }
-      }));
+      'Momen kas ≥ Rp 50 Jt: komitmen terjadwal dan hari panen penerimaan — di luar arus rutin harian.',
+      el('div', null, [
+        ringkas,
+        UI.tabel(kolom, tampil, {
+          cari: tampil.length > 8, cariPlaceholder: 'Cari keterangan atau pos…', maks: 25,
+          kelasBaris: function (r) { return 'agenda-baris-' + r.tipe; },
+          kosong: {
+            ikon: 'fileText', judul: 'Belum ada momen kas besar',
+            pesan: 'Belum ada komitmen atau penerimaan ≥ Rp 50 Jt di periode ini.',
+            aksi: { label: 'Buat RAB', ikon: 'plus', onKlik: function () { global.INPUT.rabBaru(ulang); } }
+          }
+        })
+      ]),
+      filter);
   }
 
   /* Susun kalimat penyebab dari hasil E.analisaHari — dipakai di modal & vonis */

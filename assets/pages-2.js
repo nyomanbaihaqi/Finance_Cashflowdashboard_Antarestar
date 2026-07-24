@@ -440,13 +440,33 @@
           return t.skenario === sk.id && t.bulan.slice(0, 4) === String(tahun);
         }).length;
 
+        var mandiri = !!(cfg().skenarioMandiri || {})[sk.id];
+
+        var saklarMandiri = el('label', { class: 'sakelar' }, [
+          el('input', { type: 'checkbox', checked: mandiri ? 'checked' : null,
+            onchange: function () {
+              var m = Object.assign({}, cfg().skenarioMandiri || {});
+              m[sk.id] = this.checked;
+              S.simpanConfig({ skenarioMandiri: m }).then(function () {
+                UI.toast(sk.nama + (m[sk.id] ? ': hanya pakai angka yang diketik' : ': kosong ikut rumus lagi'), 'sukses');
+                ulang();
+              });
+            } }),
+          el('span', { class: 'sakelar-jalur' }),
+          el('span', { class: 'sakelar-teks', text: mandiri ? 'Rencana terpisah' : 'Ikut rumus Optimis' })
+        ]);
+
         var kartu = UI.seksi('Target GMV ' + tahun + ' — ' + sk.nama.toUpperCase(),
-          'Kosongkan sel untuk ikut rumus otomatis (' + (sk.faktor * 100).toFixed(0) + '% dari Optimis). ' +
-          'Isi angkanya kalau rencana skenario ini memang beda, bukan sekadar potongan persen.',
+          mandiri
+            ? 'Rencana terpisah: cuma angka yang kamu ketik yang dihitung. Sel kosong = 0, tidak diturunkan dari Optimis.'
+            : 'Sel kosong otomatis ikut rumus ' + (sk.faktor * 100).toFixed(0) + '% dari Optimis. ' +
+              'Nyalakan "Rencana terpisah" kalau skenario ini mau berdiri sendiri.',
           g.tabel,
           el('div', { class: 'baris' }, [
-            UI.badge(jmlManual ? jmlManual + ' sel diisi manual' : 'semua ikut rumus', jmlManual ? 'oranye' : 'abu'),
-            jmlManual ? UI.btn('Kembalikan ke rumus', { kecil: true, ikon: 'refresh',
+            saklarMandiri,
+            UI.badge(jmlManual ? jmlManual + ' sel diisi' : (mandiri ? 'belum ada isian' : 'semua ikut rumus'),
+              jmlManual ? 'oranye' : (mandiri ? 'merah' : 'abu')),
+            jmlManual ? UI.btn('Kosongkan', { kecil: true, ikon: 'refresh',
               onKlik: function () { resetSkenario(sk, tahun, ulang); } }) : null
           ]));
         kartu.classList.add('kartu-skenario', 'ks-' + sk.id);
@@ -454,14 +474,41 @@
       });
 
       var dataBar = bulanList.map(function (b) {
-        return { label: UI.BULAN_PENDEK[+b.slice(5, 7) - 1], a: totalKolom[b], b: CFG.ACHIEVE_2026[b] || 0 };
+        return { label: UI.BULAN_PENDEK[+b.slice(5, 7) - 1], a: totalKolom[b], b: realisasiBulan(b) };
       });
+      var adaRealisasi = dataBar.some(function (x) { return x.b > 0; });
       var barWrap = el('div');
       root.appendChild(UI.seksi('Target vs realisasi GMV',
-        'Realisasi dari laporan commercial. Bulan tanpa data = belum berjalan.', barWrap));
+        adaRealisasi
+          ? 'Realisasi dihitung dari Aktual Harian (kas penjualan ÷ netto%). Bulan tanpa catatan aktual = kosong.'
+          : 'Belum ada realisasi karena Aktual Harian masih kosong — yang tampil baru targetnya.',
+        barWrap));
       CHART.batangBulanan(barWrap, dataBar, { labelA: 'Target', labelB: 'Realisasi', warna: '#2563eb', tinggi: 230 });
     }
   };
+
+  /* Realisasi GMV sebulan, DIHITUNG dari Aktual Harian — bukan angka hardcode.
+     Kas penjualan yang tercatat dibalik ke GMV dengan membagi netto% channel.
+     Bulan tanpa catatan aktual = 0, jadi grafik tidak pernah menampilkan
+     "realisasi" untuk periode yang datanya belum dimasukkan. */
+  function realisasiBulan(bulan) {
+    var nettoCoa = {};
+    CFG.CHANNELS.forEach(function (ch) {
+      if (nettoCoa[ch.coa] === undefined) nettoCoa[ch.coa] = ch.netto || 100;
+    });
+    var penjualan = {};
+    CFG.COA_IN.forEach(function (c) { if (c.group === 'penjualan') penjualan[c.id] = true; });
+
+    var total = 0;
+    d().actual.forEach(function (a) {
+      if (a.tipe !== 'in') return;
+      if (String(a.tanggal).slice(0, 7) !== bulan) return;
+      if (!penjualan[a.coa]) return;
+      var netto = nettoCoa[a.coa] || 100;
+      total += (Number(a.nominal) || 0) / (netto / 100);
+    });
+    return Math.round(total);
+  }
 
   /* ---- jembatan bulanan <-> harian ---- */
   /* override harian basis (Optimis) — grid Optimis hanya melihat baris ini */

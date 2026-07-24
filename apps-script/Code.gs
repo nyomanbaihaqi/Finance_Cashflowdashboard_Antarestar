@@ -25,8 +25,11 @@ var SKEMA = {
                   'deskripsi', 'item', 'satuan', 'ket', 'total', 'coa', 'status'],
   Recurring:      ['id', 'nama', 'coa', 'nominal', 'tanggal', 'mulai', 'selesai', 'aktif'],
   Variabel:       ['id', 'nama', 'coa', 'persen', 'aktif'],
-  RencanaBulanan: ['id', 'bulan', 'coa', 'nominal'],
-  RencanaHarian:  ['id', 'tanggal', 'coa', 'nominal']
+  /* 'keterangan' menyimpan detail yang lebih halus dari COA-nya, misalnya
+     BPJS di dalam pos gaji, atau PPN berjalan vs tunggakan di dalam pos PPN.
+     Tanpa kolom ini detail itu hilang begitu diunggah. */
+  RencanaBulanan: ['id', 'bulan', 'coa', 'nominal', 'keterangan'],
+  RencanaHarian:  ['id', 'tanggal', 'coa', 'nominal', 'keterangan']
 };
 
 /* Nama key di frontend → nama tab di spreadsheet */
@@ -277,10 +280,19 @@ function aksiReplace(tabKey, rows) {
   var sh = ss().getSheetByName(nama);
   var kolom = SKEMA[nama];
 
-  if (sh.getLastRow() > 1) sh.deleteRows(2, sh.getLastRow() - 1);
+  /* Kosongkan isi, JANGAN deleteRows. Baris 1 di-freeze sebagai header, jadi
+     kalau seluruh baris sisanya dihapus sekaligus Sheets menolak dengan
+     "menghapus semua baris non-beku tidak mungkin dilakukan". clearContent
+     tidak punya batasan itu dan juga lebih cepat. */
+  var isiLama = sh.getLastRow();
+  if (isiLama > 1) sh.getRange(2, 1, isiLama - 1, sh.getMaxColumns()).clearContent();
 
   rows = rows || [];
   if (rows.length) {
+    /* Pastikan sheet cukup panjang sebelum menulis sekaligus. */
+    var butuh = rows.length + 1;
+    if (sh.getMaxRows() < butuh) sh.insertRowsAfter(sh.getMaxRows(), butuh - sh.getMaxRows());
+
     var nilai = rows.map(function (r) { return keBaris(nama, r); });
     sh.getRange(2, 1, nilai.length, kolom.length).setNumberFormat('@').setValues(nilai);
   }
@@ -319,5 +331,17 @@ function catat(aksi, tab, detail) {
    ========================================================================== */
 function setupSekali() {
   siapkanSpreadsheet();
-  SpreadsheetApp.getUi().alert('Semua tab siap: ' + Object.keys(SKEMA).join(', ') + ', Config, Log');
+
+  var pesan = 'Selesai. Tab siap: ' + Object.keys(SKEMA).join(', ') + ', Config, Log';
+  Logger.log(pesan);
+
+  /* Popup hanya bisa muncul kalau dijalankan dari menu spreadsheet. Dari editor
+     Apps Script, getUi() melempar error — dan itu dulu terlihat seperti setup
+     gagal padahal tab-nya sudah jadi. Sekarang kegagalan popup diabaikan. */
+  try {
+    SpreadsheetApp.getUi().alert(pesan);
+  } catch (e) {
+    /* tidak ada UI di konteks ini — cukup lihat hasilnya di Logs / spreadsheet */
+  }
+  return pesan;
 }
