@@ -329,78 +329,129 @@
           onKlik: function () { editorHarian(ulang); } })
       ]));
 
-      var thead = el('thead', null, el('tr', null,
-        [el('th', { class: 'kolom-beku', text: 'CHANNEL' })].concat(bulanList.map(function (b) {
-          return el('th', { class: 'kanan', text: UI.namaBulanPendek(b) });
-        })).concat([el('th', { class: 'kanan', text: 'TOTAL' })])));
+      /* Grid target untuk satu skenario. Optimis = basis yang diketik penuh;
+         Moderate/Pesimis boleh dikosongkan → otomatis ikut basis × faktornya. */
+      function gridSkenario(sk, bulanList) {
+        var basis = sk.id === 'optimis';
+        var thead = el('thead', null, el('tr', null,
+          [el('th', { class: 'kolom-beku', text: 'CHANNEL' })].concat(bulanList.map(function (b) {
+            return el('th', { class: 'kanan', text: UI.namaBulanPendek(b) });
+          })).concat([el('th', { class: 'kanan', text: 'TOTAL' })])));
 
-      var tbody = el('tbody');
-      var totalKolom = {}; bulanList.forEach(function (b) { totalKolom[b] = 0; });
+        var tbody = el('tbody');
+        var totalKolom = {}; bulanList.forEach(function (b) { totalKolom[b] = 0; });
 
-      CFG.CHANNELS.forEach(function (c) {
-        var totalBaris = 0;
-        var sel = bulanList.map(function (b) {
-          var nilai = tNilaiEfektif(b, c.id);
-          var sumber = tSumber(b, c.id);
-          totalBaris += nilai; totalKolom[b] += nilai;
-          var saran = E.masterChannel(b, c.id);               /* cuma jadi placeholder */
-          var jmlHari = sumber === 'harian' ? tHarianRows(b, c.id).length : 0;
-          var inp = el('input', {
-            class: 'sel-inp' + (nilai ? (sumber === 'harian' ? ' sel-harian' : ' sel-manual') : ' sel-kosong'),
-            value: nilai ? UI.grup(nilai) : '',
-            placeholder: saran ? UI.grup(saran) : '0',
-            'aria-label': c.nama + ' ' + UI.namaBulan(b),
-            title: sumber === 'harian'
-              ? 'dari override harian (' + jmlHari + ' tanggal) — klik "Override harian" untuk ubah per tanggal'
-              : (nilai ? 'diisi manual' : (saran ? 'kosong · saran master ' + UI.rpS(saran) + ' (tidak dihitung)' : 'kosong'))
-          });
-          inp.addEventListener('focus', function () { inp.select(); });
-          inp.addEventListener('change', function () {
-            var baru = UI.parseUang(inp.value);
-            if (baru === nilai) return;
-            if (sumber === 'harian') {
-              if (!baru) {
-                UI.konfirmasi('Hapus override harian?',
-                  c.nama + ' ' + UI.namaBulan(b) + ' punya ' + jmlHari + ' tanggal (total ' + UI.rpS(nilai) + '). Hapus semua?',
-                  function () { tHapusHarian(b, c.id).then(function () { UI.toast('Override harian dihapus', 'sukses'); ulang(); }); },
-                  { labelYa: 'Ya, hapus' });
-                ulang();
-              } else {
-                UI.konfirmasi('Ganti jadi target bulanan?',
-                  c.nama + ' ' + UI.namaBulan(b) + ' sekarang diisi per tanggal (' + jmlHari + ' hari). ' +
-                  'Ubah jadi target bulanan ' + UI.rpS(baru) + ' (disebar pakai pola)? Override harian yang detail akan diganti.',
-                  function () {
-                    tHapusHarian(b, c.id).then(function () { return simpanTarget(b, c.id, baru); })
-                      .then(function () { UI.toast('Diganti jadi target bulanan', 'sukses'); ulang(); });
-                  }, { labelYa: 'Ya, ganti' });
-                ulang();
+        CFG.CHANNELS.forEach(function (c) {
+          var totalBaris = 0;
+          var sel = bulanList.map(function (b) {
+            var efektif = basis ? tNilaiEfektif(b, c.id)
+                                : E.targetSkenario(d(), b, c.id, sk.id, sk.faktor);
+            totalBaris += efektif; totalKolom[b] += efektif;
+
+            var sendiri = basis ? null : rowTargetSk(b, c.id, sk.id);
+            var sumber = basis ? tSumber(b, c.id) : (sendiri ? 'manual' : 'ikut');
+            var jmlHari = (basis && sumber === 'harian') ? tHarianRows(b, c.id).length : 0;
+            var saran = basis ? E.masterChannel(b, c.id)
+                              : Math.round(tNilaiEfektif(b, c.id) * sk.faktor);
+
+            var kelas = 'sel-inp';
+            if (basis) kelas += efektif ? (sumber === 'harian' ? ' sel-harian' : ' sel-manual') : ' sel-kosong';
+            else kelas += sendiri ? ' sel-manual' : ' sel-kosong';
+
+            var inp = el('input', {
+              class: kelas,
+              value: basis ? (efektif ? UI.grup(efektif) : '') : (sendiri ? UI.grup(efektif) : ''),
+              placeholder: saran ? UI.grup(saran) : '0',
+              'aria-label': c.nama + ' ' + UI.namaBulan(b) + ' ' + sk.nama,
+              title: basis
+                ? (sumber === 'harian'
+                    ? 'dari override harian (' + jmlHari + ' tanggal)'
+                    : (efektif ? 'diisi manual' : 'kosong · saran master ' + UI.rpS(saran)))
+                : (sendiri ? 'diisi manual khusus ' + sk.nama
+                           : 'kosong · otomatis ' + (sk.faktor * 100).toFixed(0) + '% dari Optimis = ' + UI.rpS(saran))
+            });
+            inp.addEventListener('focus', function () { inp.select(); });
+            inp.addEventListener('change', function () {
+              var baru = UI.parseUang(inp.value);
+
+              if (!basis) {                       /* grid Moderate / Pesimis */
+                if (baru === efektif && sendiri) return;
+                simpanTargetSk(b, c.id, sk.id, baru).then(ulang);
+                return;
               }
-              return;
-            }
-            simpanTarget(b, c.id, baru).then(ulang);
-          });
-          return el('td', { class: 'kanan' }, inp);
-        });
-        tbody.appendChild(el('tr', null,
-          [el('td', { class: 'kolom-beku' }, el('div', null, [
-            el('div', { class: 'tebal', text: c.nama }),
-            el('div', { class: 'muted2', text: CFG.namaCoa(c.coa) + ' · H+' + c.lag + ' · netto ' + c.netto + '%' })
-          ]))].concat(sel).concat([el('td', { class: 'kanan tebal', text: UI.rpS(totalBaris) })])));
-      });
 
-      var grand = 0;
-      bulanList.forEach(function (b) { grand += totalKolom[b]; });
-      tbody.appendChild(el('tr', { class: 'total' },
-        [el('td', { class: 'kolom-beku', text: 'TOTAL GMV' })].concat(bulanList.map(function (b) {
-          return el('td', { class: 'kanan', text: UI.rpS(totalKolom[b]) });
-        })).concat([el('td', { class: 'kanan', text: UI.rpS(grand) })])));
+              if (baru === efektif) return;
+              if (sumber === 'harian') {
+                if (!baru) {
+                  UI.konfirmasi('Hapus override harian?',
+                    c.nama + ' ' + UI.namaBulan(b) + ' punya ' + jmlHari + ' tanggal (total ' + UI.rpS(efektif) + '). Hapus semua?',
+                    function () { tHapusHarian(b, c.id).then(function () { UI.toast('Override harian dihapus', 'sukses'); ulang(); }); },
+                    { labelYa: 'Ya, hapus' });
+                  ulang();
+                } else {
+                  UI.konfirmasi('Ganti jadi target bulanan?',
+                    c.nama + ' ' + UI.namaBulan(b) + ' sekarang diisi per tanggal (' + jmlHari + ' hari). ' +
+                    'Ubah jadi target bulanan ' + UI.rpS(baru) + '? Override harian yang detail akan diganti.',
+                    function () {
+                      tHapusHarian(b, c.id).then(function () { return simpanTarget(b, c.id, baru); })
+                        .then(function () { UI.toast('Diganti jadi target bulanan', 'sukses'); ulang(); });
+                    }, { labelYa: 'Ya, ganti' });
+                  ulang();
+                }
+                return;
+              }
+              simpanTarget(b, c.id, baru).then(ulang);
+            });
+            return el('td', { class: 'kanan' }, inp);
+          });
+
+          tbody.appendChild(el('tr', null,
+            [el('td', { class: 'kolom-beku' }, el('div', null, [
+              el('div', { class: 'tebal', text: c.nama }),
+              el('div', { class: 'muted2', text: CFG.namaCoa(c.coa) + ' · H+' + c.lag + ' · netto ' + c.netto + '%' })
+            ]))].concat(sel).concat([el('td', { class: 'kanan tebal', text: UI.rpS(totalBaris) })])));
+        });
+
+        var grand = 0;
+        bulanList.forEach(function (b) { grand += totalKolom[b]; });
+        tbody.appendChild(el('tr', { class: 'total' },
+          [el('td', { class: 'kolom-beku', text: 'TOTAL GMV' })].concat(bulanList.map(function (b) {
+            return el('td', { class: 'kanan', text: UI.rpS(totalKolom[b]) });
+          })).concat([el('td', { class: 'kanan', text: UI.rpS(grand) })])));
+
+        return { tabel: el('div', { class: 'tabel-wrap tabel-beku' },
+          el('table', { class: 'tabel tabel-grid' }, [thead, tbody])), totalKolom: totalKolom, grand: grand };
+      }
 
       var adaTHarian = d().targetHarian.length > 0;
-      root.appendChild(UI.seksi('Target GMV ' + tahun + ' per channel',
-        'Isi bulanan (disebar ke harian otomatis) atau isi per tanggal di Override harian — dua-duanya nyambung. ' +
-        (adaTHarian ? 'Sel biru = dari override harian; angkanya jumlah sebulan. ' : '') +
-        'Angka samar = saran master (belum dihitung).',
-        el('div', { class: 'tabel-wrap tabel-beku' }, el('table', { class: 'tabel tabel-grid' }, [thead, tbody]))));
+      var gOptimis = gridSkenario(CFG.SKENARIO[0], bulanList);
+      var totalKolom = gOptimis.totalKolom;
+
+      root.appendChild(UI.seksi('Target GMV ' + tahun + ' — OPTIMIS (basis)',
+        'Isi bulanan (disebar ke harian otomatis) atau per tanggal lewat Override harian — dua-duanya nyambung. ' +
+        (adaTHarian ? 'Sel biru = dari override harian. ' : '') +
+        'Angka samar = saran master, belum dihitung.',
+        gOptimis.tabel));
+
+      /* --- grid Moderate & Pesimis, masing-masing bisa diisi sendiri --- */
+      CFG.SKENARIO.slice(1).forEach(function (sk) {
+        var g = gridSkenario(sk, bulanList);
+        var jmlManual = d().targetBulanan.filter(function (t) {
+          return t.skenario === sk.id && t.bulan.slice(0, 4) === String(tahun);
+        }).length;
+
+        var kartu = UI.seksi('Target GMV ' + tahun + ' — ' + sk.nama.toUpperCase(),
+          'Kosongkan sel untuk ikut rumus otomatis (' + (sk.faktor * 100).toFixed(0) + '% dari Optimis). ' +
+          'Isi angkanya kalau rencana skenario ini memang beda, bukan sekadar potongan persen.',
+          g.tabel,
+          el('div', { class: 'baris' }, [
+            UI.badge(jmlManual ? jmlManual + ' sel diisi manual' : 'semua ikut rumus', jmlManual ? 'oranye' : 'abu'),
+            jmlManual ? UI.btn('Kembalikan ke rumus', { kecil: true, ikon: 'refresh',
+              onKlik: function () { resetSkenario(sk, tahun, ulang); } }) : null
+          ]));
+        kartu.classList.add('kartu-skenario', 'ks-' + sk.id);
+        root.appendChild(kartu);
+      });
 
       var dataBar = bulanList.map(function (b) {
         return { label: UI.BULAN_PENDEK[+b.slice(5, 7) - 1], a: totalKolom[b], b: CFG.ACHIEVE_2026[b] || 0 };
@@ -413,9 +464,11 @@
   };
 
   /* ---- jembatan bulanan <-> harian ---- */
+  /* override harian basis (Optimis) — grid Optimis hanya melihat baris ini */
   function tHarianRows(bulan, channel) {
     return d().targetHarian.filter(function (x) {
-      return String(x.tanggal).slice(0, 7) === bulan && x.channel === channel;
+      return String(x.tanggal).slice(0, 7) === bulan && x.channel === channel &&
+             (x.skenario || 'optimis') === 'optimis';
     });
   }
   function tTotalHarian(bulan, channel) {
@@ -438,14 +491,44 @@
     }, Promise.resolve());
   }
 
+  /* baris target untuk skenario tertentu (basis 'optimis' = baris tanpa skenario) */
+  function rowTargetSk(bulan, channel, skenario) {
+    return d().targetBulanan.filter(function (t) {
+      return t.bulan === bulan && t.channel === channel &&
+             (t.skenario || 'optimis') === skenario;
+    })[0];
+  }
+
   function simpanTarget(bulan, channel, gmv) {
-    var ada = d().targetBulanan.filter(function (t) { return t.bulan === bulan && t.channel === channel; })[0];
+    return simpanTargetSk(bulan, channel, 'optimis', gmv);
+  }
+
+  function simpanTargetSk(bulan, channel, skenario, gmv) {
+    var ada = rowTargetSk(bulan, channel, skenario);
     if (ada) {
       if (!gmv) return S.hapus('targetBulanan', ada.id);
       return S.ubah('targetBulanan', ada.id, { gmv: gmv });
     }
     if (!gmv) return Promise.resolve();
-    return S.tambah('targetBulanan', { bulan: bulan, channel: channel, gmv: gmv });
+    return S.tambah('targetBulanan', { bulan: bulan, channel: channel, gmv: gmv, skenario: skenario });
+  }
+
+  /* Hapus semua isian manual satu skenario di tahun tertentu → balik ikut rumus */
+  function resetSkenario(sk, tahun, ulang) {
+    var rows = d().targetBulanan.filter(function (t) {
+      return t.skenario === sk.id && String(t.bulan).slice(0, 4) === String(tahun);
+    });
+    if (!rows.length) return;
+    UI.konfirmasi('Kembalikan ' + sk.nama + ' ke rumus?',
+      rows.length + ' sel yang diisi manual akan dihapus. Setelah itu ' + sk.nama +
+      ' otomatis ikut ' + (sk.faktor * 100).toFixed(0) + '% dari Optimis.',
+      function () {
+        rows.reduce(function (p, r) {
+          return p.then(function () { return S.hapus('targetBulanan', r.id); });
+        }, Promise.resolve()).then(function () {
+          UI.toast(sk.nama + ' kembali ikut rumus', 'sukses'); ulang();
+        });
+      }, { labelYa: 'Ya, kembalikan' });
   }
 
   function isiDariMaster(bulanList, ulang) {

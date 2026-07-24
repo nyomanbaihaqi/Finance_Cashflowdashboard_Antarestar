@@ -19,8 +19,8 @@ var TOKEN = '';
 /* Kolom tiap tab. Nama kolom = nama properti di frontend. */
 var SKEMA = {
   Actual:        ['id', 'tanggal', 'coa', 'tipe', 'nominal', 'catatan'],
-  TargetBulanan: ['id', 'bulan', 'channel', 'gmv'],
-  TargetHarian:  ['id', 'tanggal', 'channel', 'gmv'],
+  TargetBulanan: ['id', 'bulan', 'channel', 'gmv', 'skenario'],
+  TargetHarian:  ['id', 'tanggal', 'channel', 'gmv', 'skenario'],
   RAB:           ['id', 'bulan', 'divisi', 'kegiatan', 'benefit', 'tanggalRencana',
                   'deskripsi', 'item', 'satuan', 'ket', 'total', 'coa', 'status'],
   Recurring:      ['id', 'nama', 'coa', 'nominal', 'tanggal', 'mulai', 'selesai', 'aktif'],
@@ -98,14 +98,36 @@ function siapkanSpreadsheet() {
 
   for (nama in SKEMA) {
     if (!SKEMA.hasOwnProperty(nama)) continue;
+    var kolom = SKEMA[nama];
     var sh = buku.getSheetByName(nama);
+
     if (!sh) {
       sh = buku.insertSheet(nama);
-      sh.getRange(1, 1, 1, SKEMA[nama].length).setValues([SKEMA[nama]]);
-      sh.getRange(1, 1, 1, SKEMA[nama].length).setFontWeight('bold').setBackground('#f1f5f9');
+      sh.getRange(1, 1, 1, kolom.length).setValues([kolom]);
+      sh.getRange(1, 1, 1, kolom.length).setFontWeight('bold').setBackground('#f1f5f9');
       sh.setFrozenRows(1);
       /* semua kolom sebagai teks polos supaya tanggal & angka tidak diubah Sheets */
-      sh.getRange(1, 1, sh.getMaxRows(), SKEMA[nama].length).setNumberFormat('@');
+      sh.getRange(1, 1, sh.getMaxRows(), kolom.length).setNumberFormat('@');
+      continue;
+    }
+
+    /* Tab sudah ada: samakan header kalau skema bertambah kolom.
+       Ini yang bikin penambahan kolom baru tidak perlu bikin ulang tab. */
+    var lebarSekarang = Math.max(sh.getLastColumn(), 1);
+    var judul = sh.getRange(1, 1, 1, lebarSekarang).getValues()[0];
+    var beda = judul.length < kolom.length;
+    if (!beda) {
+      for (var q = 0; q < kolom.length; q++) {
+        if (String(judul[q] || '').trim() !== kolom[q]) { beda = true; break; }
+      }
+    }
+    if (beda) {
+      if (sh.getMaxColumns() < kolom.length) {
+        sh.insertColumnsAfter(sh.getMaxColumns(), kolom.length - sh.getMaxColumns());
+      }
+      sh.getRange(1, 1, 1, kolom.length).setValues([kolom])
+        .setFontWeight('bold').setBackground('#f1f5f9');
+      sh.getRange(1, 1, sh.getMaxRows(), kolom.length).setNumberFormat('@');
     }
   }
 

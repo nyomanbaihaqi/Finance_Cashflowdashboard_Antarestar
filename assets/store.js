@@ -170,8 +170,15 @@
       r.persen = Number(r.persen) || 0;
       r.aktif = !(r.aktif === false || r.aktif === 'FALSE' || r.aktif === 0);
     });
-    d.targetBulanan.forEach(function (r) { r.gmv = Number(r.gmv) || 0; r.bulan = String(r.bulan).slice(0, 7); });
-    d.targetHarian.forEach(function (r) { r.gmv = Number(r.gmv) || 0; r.tanggal = String(r.tanggal).slice(0, 10); });
+    /* skenario kosong = baris lama = basis Optimis */
+    d.targetBulanan.forEach(function (r) {
+      r.gmv = Number(r.gmv) || 0; r.bulan = String(r.bulan).slice(0, 7);
+      r.skenario = String(r.skenario || 'optimis').trim().toLowerCase();
+    });
+    d.targetHarian.forEach(function (r) {
+      r.gmv = Number(r.gmv) || 0; r.tanggal = String(r.tanggal).slice(0, 10);
+      r.skenario = String(r.skenario || 'optimis').trim().toLowerCase();
+    });
     d.rencanaBulanan.forEach(function (r) { r.nominal = Number(r.nominal) || 0; r.bulan = String(r.bulan).slice(0, 7); });
     d.rencanaHarian.forEach(function (r) { r.nominal = Number(r.nominal) || 0; r.tanggal = String(r.tanggal).slice(0, 10); });
 

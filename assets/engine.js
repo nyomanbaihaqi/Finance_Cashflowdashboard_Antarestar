@@ -73,44 +73,79 @@
   /* ------------------------------------------------------------- target GMV */
   /* Bangun peta GMV harian per channel untuk semua bulan yang dibutuhkan.
      Prioritas: override harian (tab Target_Harian) > sebaran dari target bulanan. */
-  function petaGmv(data, bulanList) {
-    var peta = {};   // peta[channelId][tanggal] = gmv
-    var i, j, c;
+  /* Normalisasi nama skenario pada baris target. Baris lama tanpa kolom
+     skenario dianggap milik OPTIMIS — itu basis yang selama ini dipakai. */
+  function skRow(r) {
+    var s = String(r.skenario || '').trim().toLowerCase();
+    return s || 'optimis';
+  }
 
+  /* GMV harian per channel untuk SATU skenario.
+     Aturan: kalau skenario itu punya angkanya sendiri → pakai apa adanya.
+     Kalau tidak → pakai target Optimis dikali faktor skenario. Jadi finance
+     bisa mengisi Moderate/Pesimis sendiri, atau membiarkannya ikut rumus. */
+  function petaGmv(data, bulanList, skenarioId, faktor) {
+    skenarioId = skenarioId || 'optimis';
+    faktor = (faktor === undefined || faktor === null) ? 1 : faktor;
+
+    var peta = {}, i, j, c;
     for (i = 0; i < CFG.CHANNELS.length; i++) peta[CFG.CHANNELS[i].id] = {};
 
-    /* 1. dari target bulanan per channel */
+    /* 1. target bulanan */
     for (i = 0; i < bulanList.length; i++) {
       var bln = bulanList[i];
       for (j = 0; j < CFG.CHANNELS.length; j++) {
         c = CFG.CHANNELS[j];
-        var total = targetBulananChannel(data, bln, c.id);
+        var total = targetSkenario(data, bln, c.id, skenarioId, faktor);
         if (!total) continue;
         var sebar = sebarBulan(bln, total), k;
         for (k in sebar) if (sebar.hasOwnProperty(k)) peta[c.id][k] = sebar[k];
       }
     }
 
-    /* 2. override harian menang */
+    /* 2. override harian menang — dipisah per skenario juga */
     var th = data.targetHarian || [];
+    var spesifik = {}, basis = {};
     for (i = 0; i < th.length; i++) {
       var r = th[i];
-      if (peta[r.channel]) peta[r.channel][String(r.tanggal).slice(0, 10)] = Number(r.gmv) || 0;
+      if (!peta[r.channel]) continue;
+      var kunci = r.channel + '|' + String(r.tanggal).slice(0, 10);
+      var sk = skRow(r);
+      if (sk === skenarioId) spesifik[kunci] = Number(r.gmv) || 0;
+      else if (sk === 'optimis') basis[kunci] = Number(r.gmv) || 0;
+    }
+    var kk;
+    for (kk in basis) if (basis.hasOwnProperty(kk) && !(kk in spesifik)) {
+      var p1 = kk.split('|');
+      peta[p1[0]][p1[1]] = Math.round(basis[kk] * faktor);
+    }
+    for (kk in spesifik) if (spesifik.hasOwnProperty(kk)) {
+      var p2 = kk.split('|');
+      peta[p2[0]][p2[1]] = spesifik[kk];
     }
 
     return peta;
   }
 
-  /* Target GMV satu channel di satu bulan — HANYA yang benar-benar diisi.
-     Bulan yang belum diisi = 0, bukan tebakan. Ini yang bikin total di tabel
-     Target sama persis dengan angka yang diketik finance, dan proyeksi tidak
-     memunculkan penjualan untuk bulan yang belum punya target. */
-  function targetBulananChannel(data, bln, channelId) {
-    var tb = data.targetBulanan || [], i;
+  /* Target bulanan satu channel untuk skenario tertentu. */
+  function targetSkenario(data, bln, channelId, skenarioId, faktor) {
+    skenarioId = skenarioId || 'optimis';
+    faktor = (faktor === undefined || faktor === null) ? 1 : faktor;
+    var tb = data.targetBulanan || [], i, basis = 0, sendiri = null;
     for (i = 0; i < tb.length; i++) {
-      if (bulanKey(tb[i].bulan) === bln && tb[i].channel === channelId) return Number(tb[i].gmv) || 0;
+      var r = tb[i];
+      if (bulanKey(r.bulan) !== bln || r.channel !== channelId) continue;
+      var sk = skRow(r);
+      if (sk === skenarioId && skenarioId !== 'optimis') sendiri = Number(r.gmv) || 0;
+      else if (sk === 'optimis') basis = Number(r.gmv) || 0;
     }
-    return 0;
+    if (sendiri !== null) return sendiri;
+    return Math.round(basis * faktor);
+  }
+
+  /* Target basis (Optimis) — dipakai grid target & perhitungan lama. */
+  function targetBulananChannel(data, bln, channelId) {
+    return targetSkenario(data, bln, channelId, 'optimis', 1);
   }
 
   /* Saran default per channel dari target master (TARGET_2026 × PORSI_MP).
@@ -132,7 +167,8 @@
   /* --------------------------------------------------------- kas dari GMV */
   /* Uang masuk di tanggal T = GMV tanggal (T - lag) × netto% × faktor skenario.
      Hasil dipetakan ke COA penerimaan masing-masing channel. */
-  function kasDariGmv(peta, tanggal, faktor, cfg) {
+  /* Faktor skenario sudah diterapkan di petaGmv, jangan dikalikan lagi di sini. */
+  function kasDariGmv(peta, tanggal, cfg) {
     var hasil = {}, total = 0, i;
     for (i = 0; i < CFG.CHANNELS.length; i++) {
       var c = CFG.CHANNELS[i];
@@ -140,7 +176,7 @@
       var asal = tambahHari(tanggal, -lag);
       var gmv = (peta[c.id] && peta[c.id][asal]) || 0;
       if (!gmv) continue;
-      var kas = Math.round(gmv * ((c.netto || 100) / 100) * faktor);
+      var kas = Math.round(gmv * ((c.netto || 100) / 100));
       hasil[c.coa] = (hasil[c.coa] || 0) + kas;
       total += kas;
     }
@@ -430,12 +466,12 @@
     for (i = 0; i < scan.length; i++) bulanSet[bulanKey(scan[i])] = true;
     var bulanList = Object.keys(bulanSet).sort();
 
-    var gmv = petaGmv(data, bulanList);
+    var gmv = petaGmv(data, bulanList, sk.id, faktor);
     var aktual = petaAktual(data);
     var rab = petaRab(data, cutoff);
     var recur = petaRecurring(data, tanggalList, cutoff);
     var rencana = petaRencana(data, tanggalList, cutoff);
-    var vari = petaVariabel(data, cfg, gmv, tanggalList, faktor, cutoff);
+    var vari = petaVariabel(data, cfg, gmv, tanggalList, 1, cutoff);
     var baseline = hitungBaseline(data, cfg);
     var baselineItem = [];
     for (var bc in baseline) if (baseline.hasOwnProperty(bc)) {
@@ -481,7 +517,7 @@
         if (tampil) { masukAktual += masuk; keluarAktual += keluar; }
       } else {
         /* penerimaan dari GMV yang sudah lewat lag */
-        var kas = kasDariGmv(gmv, tgl, faktor, cfg);
+        var kas = kasDariGmv(gmv, tgl, cfg);
         detailMasuk = kas.detail; masuk = kas.total;
         if (masuk) item.push({ coa: 'penjualan', nominal: masuk, tipe: 'in', label: 'Penerimaan penjualan (H+lag)', sumber: 'forecast' });
 
@@ -750,7 +786,7 @@
       var bln = bulanList[i], total = 0, perChannel = {};
       for (j = 0; j < CFG.CHANNELS.length; j++) {
         var c = CFG.CHANNELS[j];
-        var v = Math.round(targetBulananChannel(data, bln, c.id) * faktor);
+        var v = Math.round(targetSkenario(data, bln, c.id, skenarioId, faktor));
         perChannel[c.id] = v;
         total += v;
       }
@@ -763,7 +799,7 @@
     toKey: toKey, fromKey: fromKey, bulanKey: bulanKey, tambahHari: tambahHari,
     jumlahHari: jumlahHari, rentang: rentang, tanggalBulan: tanggalBulan, pad: pad,
     bobotHari: bobotHari, sebarBulan: sebarBulan,
-    petaGmv: petaGmv, targetBulananChannel: targetBulananChannel, masterChannel: masterChannel,
+    petaGmv: petaGmv, targetBulananChannel: targetBulananChannel, targetSkenario: targetSkenario, masterChannel: masterChannel,
     cutoffAktual: cutoffAktual, saldoAktualPada: saldoAktualPada, hitungBaseline: hitungBaseline,
     petaRencana: petaRencana, coaBerencana: coaBerencana,
     hitung: hitung, hitungSemua: hitungSemua, omsetBulanan: omsetBulanan,

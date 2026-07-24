@@ -498,10 +498,11 @@
       });
 
       /* saklar garis — matikan/nyalakan sesuai kebutuhan; skala Y ikut yang aktif */
+      var G = global.CHARTB.GARIS;
       var GARIS = [
-        { id: 'saldo',  label: 'Saldo',       warna: aktif.skenario.warna },
-        { id: 'masuk',  label: 'Uang masuk',  warna: '#10b981' },
-        { id: 'keluar', label: 'Uang keluar', warna: '#e11d48' }
+        { id: 'saldo',  label: 'Saldo',       warna: G.saldo.warna,  gaya: 'tebal' },
+        { id: 'masuk',  label: 'Uang masuk',  warna: G.masuk.warna,  gaya: 'solid' },
+        { id: 'keluar', label: 'Uang keluar', warna: G.keluar.warna, gaya: 'putus' }
       ];
       var saklar = el('div', { class: 'garis-saklar' });
       GARIS.forEach(function (g) {
@@ -516,8 +517,10 @@
             ulang();
           }
         }, [
-          el('span', { class: 'gs-dot', style: 'background:' + (on ? g.warna : 'transparent') +
-            ';border-color:' + g.warna }),
+          /* contoh garis, bukan bulatan — supaya bedanya (tebal/solid/putus)
+             kelihatan langsung di saklarnya, bukan cuma warna */
+          el('span', { class: 'gs-garis gs-' + g.gaya,
+            style: 'border-color:' + g.warna + ';opacity:' + (on ? 1 : 0.32) }),
           el('span', { text: g.label })
         ]));
       });
@@ -528,9 +531,18 @@
         ]),
         (function () {
           var adaArus = gt.masuk || gt.keluar;
+          if (gt.masuk && gt.keluar) {
+            return el('div', { class: 'legend-grup' }, [
+              el('span', { class: 'lg-dot', style: 'background:' + G.masuk.warna + ';opacity:.28' }),
+              el('span', { text: 'Area hijau = surplus hari itu' }),
+              el('span', { class: 'lg-dot', style: 'background:' + G.keluar.warna + ';opacity:.28' }),
+              el('span', { text: 'Area merah = tekor hari itu' }),
+              gt.saldo ? el('span', { class: 'muted2', text: '· sumbu kiri arus, kanan saldo' }) : null
+            ]);
+          }
           if (gt.saldo && adaArus) {
             return el('div', { class: 'legend-grup' }, el('span', { class: 'muted2',
-              text: 'Sumbu ganda — kiri: arus kas harian, kanan: saldo. Skenario pembanding disembunyikan biar tidak ramai.' }));
+              text: 'Sumbu ganda — kiri: arus kas harian, kanan: saldo.' }));
           }
           if (gt.saldo) {
             return el('div', { class: 'legend-grup' }, [

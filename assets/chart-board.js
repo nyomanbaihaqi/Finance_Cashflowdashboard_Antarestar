@@ -14,6 +14,17 @@
   var UI = global.UI, CFG = global.CFG;
   var NS = 'http://www.w3.org/2000/svg';
 
+  /* Warna & gaya garis dipatok di sini, bukan ikut warna skenario.
+     Alasan: skenario memakai hijau/oranye/merah — kalau saldo ikut skenario,
+     garis saldo bertabrakan dengan garis masuk (hijau) atau keluar (merah).
+     Tiap garis juga dibedakan ketebalan + pola putus, jadi masih terbaca
+     tanpa warna (cetak hitam-putih / buta warna). */
+  var GARIS = {
+    saldo:  { warna: '#1e40af', tebal: 3.0, dash: '' },        /* biru tua — hasil akhir */
+    masuk:  { warna: '#059669', tebal: 2.0, dash: '' },        /* hijau — solid */
+    keluar: { warna: '#dc2626', tebal: 2.0, dash: '7 4' }      /* merah — putus-putus */
+  };
+
   function sv(tag, attrs) {
     var n = document.createElementNS(NS, tag), k;
     if (attrs) for (k in attrs) if (attrs.hasOwnProperty(k) && attrs[k] !== null && attrs[k] !== undefined) {
@@ -91,7 +102,9 @@
     var adaArus = !!(tampilCfg.masuk || tampilCfg.keluar);
     var ganda = !!(tampilCfg.saldo && adaArus);   /* sumbu ganda */
 
-    var padKiri = 72, padKanan = ganda ? 74 : 26, padAtas = 30, padBawah = 46;
+    /* Padding dirampingkan supaya garis memakai hampir seluruh lebar kartu —
+       label sumbu cukup 52px, tidak perlu 72px. */
+    var padKiri = 52, padKanan = ganda ? 52 : 14, padAtas = 34, padBawah = 44;
     var plotW = lebar - padKiri - padKanan, plotH = tinggi - padAtas - padBawah;
 
     var i, s;
@@ -175,21 +188,33 @@
       var yg = padAtas + plotH * (1 - k2 / skKiri.n);
       svg.appendChild(sv('line', { x1: padKiri, y1: yg, x2: lebar - padKanan, y2: yg, class: 'grid' }));
 
-      var tKiri = sv('text', { x: padKiri - 12, y: yg + 4, class: 'ax-y' });
+      var tKiri = sv('text', { x: padKiri - 8, y: yg + 4, class: 'ax-y' });
       tKiri.textContent = UI.angkaS(skKiri.lo + skKiri.step * k2);
       svg.appendChild(tKiri);
 
       if (ganda) {
-        var tKanan = sv('text', { x: lebar - padKanan + 12, y: yg + 4, class: 'ax-y ax-y-kanan' });
+        var tKanan = sv('text', { x: lebar - padKanan + 8, y: yg + 4, class: 'ax-y ax-y-kanan' });
         tKanan.textContent = UI.angkaS(skS.lo + skS.step * k2);
         svg.appendChild(tKanan);
       }
     }
+    /* Garis nol ditebalkan — batas antara "masih punya uang" dan "minus" itu
+       titik terpenting di grafik keuangan, jangan sama dengan garis bantu lain. */
+    function garisNol(sk, kelas) {
+      if (!sk || sk.lo >= 0 || sk.hi <= 0) return;
+      var y0 = Ysk(0, sk);
+      svg.appendChild(sv('line', { x1: padKiri, y1: y0, x2: lebar - padKanan, y2: y0, class: kelas }));
+    }
+    garisNol(skKiri, 'nol');
+    if (ganda) garisNol(skS, 'nol nol-kanan');
+
     if (ganda) {
-      var jKiri = sv('text', { x: padKiri - 12, y: padAtas - 12, class: 'ax-judul', 'text-anchor': 'end' });
+      var jKiri = sv('text', { x: padKiri - 8, y: padAtas - 14, class: 'ax-judul', 'text-anchor': 'end',
+        fill: GARIS.masuk.warna });
       jKiri.textContent = 'ARUS HARIAN';
       svg.appendChild(jKiri);
-      var jKanan = sv('text', { x: lebar - padKanan + 12, y: padAtas - 12, class: 'ax-judul' });
+      var jKanan = sv('text', { x: lebar - padKanan + 8, y: padAtas - 14, class: 'ax-judul',
+        fill: GARIS.saldo.warna });
       jKanan.textContent = 'SALDO';
       svg.appendChild(jKanan);
     }
@@ -207,53 +232,91 @@
     var idxCut = -1;
     for (i = 0; i < n; i++) if (utama[i].tipe === 'aktual') idxCut = i;
 
-    var warnaAktif = (CFG.SKENARIO.filter(function (x) { return x.id === aktif; })[0] || CFG.SKENARIO[1]).warna;
 
-    /* ---- garis arus: uang masuk & uang keluar ---- */
-    function garisArus(kunci, warna) {
+    /* ---- arsiran surplus / defisit antara garis masuk & keluar ----
+       Ini yang bikin persilangan dua garis punya arti: hijau = hari itu
+       pemasukan menang, merah = hari itu tekor. Dipotong tepat di titik
+       perpotongan supaya warnanya tidak meleber. */
+    if (tampilCfg.masuk && tampilCfg.keluar) {
+      for (i = 0; i < n - 1; i++) {
+        var m1 = utama[i].masuk, k1 = utama[i].keluar;
+        var m2 = utama[i + 1].masuk, k2b = utama[i + 1].keluar;
+        var d1 = m1 - k1, d2 = m2 - k2b;
+        var x1 = X(i), x2 = X(i + 1);
+
+        function petak(xa, ma, ka, xb, mb, kb, positif) {
+          svg.appendChild(sv('polygon', {
+            points: xa + ',' + Ya(ma) + ' ' + xb + ',' + Ya(mb) + ' ' +
+                    xb + ',' + Ya(kb) + ' ' + xa + ',' + Ya(ka),
+            fill: positif ? GARIS.masuk.warna : GARIS.keluar.warna,
+            opacity: positif ? 0.13 : 0.11
+          }));
+        }
+
+        if (d1 === 0 && d2 === 0) continue;
+        if (d1 * d2 >= 0) {
+          petak(x1, m1, k1, x2, m2, k2b, (d1 + d2) >= 0);
+        } else {
+          /* menyilang di antara dua titik — cari x potongnya */
+          var t = d1 / (d1 - d2);
+          var xc = x1 + (x2 - x1) * t;
+          var mc = m1 + (m2 - m1) * t;   /* di titik potong masuk == keluar */
+          petak(x1, m1, k1, xc, mc, mc, d1 > 0);
+          petak(xc, mc, mc, x2, m2, k2b, d2 > 0);
+        }
+      }
+    }
+
+    /* ---- garis arus ---- */
+    function garisArus(kunci) {
       if (!tampilCfg[kunci]) return;
+      var g = GARIS[kunci];
       var dd = [], k;
       for (k = 0; k < n; k++) dd.push((k ? 'L' : 'M') + X(k) + ' ' + Ya(utama[k][kunci]));
-      /* area tipis kalau arus berdiri sendiri (tanpa saldo) */
-      if (!tampilCfg.saldo) {
+      /* kalau arus tampil sendirian (tanpa lawannya), beri area tipis */
+      if (!tampilCfg.saldo && !(tampilCfg.masuk && tampilCfg.keluar)) {
         var dasar = Ya(Math.max((ganda ? skA : skUtama).lo, 0));
         var area = dd.slice();
         area.push('L' + X(n - 1) + ' ' + dasar);
         area.push('L' + X(0) + ' ' + dasar + ' Z');
-        svg.appendChild(sv('path', { d: area.join(' '), fill: warna, opacity: 0.08 }));
+        svg.appendChild(sv('path', { d: area.join(' '), fill: g.warna, opacity: 0.08 }));
       }
       svg.appendChild(sv('path', {
-        d: dd.join(' '), fill: 'none', stroke: warna, 'stroke-width': 2.2,
+        d: dd.join(' '), fill: 'none', stroke: g.warna, 'stroke-width': g.tebal,
+        'stroke-dasharray': g.dash || null,
         'stroke-linecap': 'round', 'stroke-linejoin': 'round'
       }));
     }
 
     if (tampilCfg.saldo) {
-      /* area di bawah garis saldo */
-      var titikArea = [];
-      for (i = 0; i < n; i++) titikArea.push(X(i) + ',' + Y(utama[i].saldo));
-      titikArea.push(X(n - 1) + ',' + (padAtas + plotH));
-      titikArea.push(X(0) + ',' + (padAtas + plotH));
-      svg.appendChild(sv('polygon', { points: titikArea.join(' '), fill: warnaAktif, opacity: 0.10 }));
+      /* Area di bawah saldo hanya saat saldo berdiri sendiri — kalau arus juga
+         tampil, arsiran surplus/defisit yang lebih informatif dan dua isian
+         sekaligus bikin grafik keruh. */
+      if (!adaArus) {
+        var titikArea = [];
+        for (i = 0; i < n; i++) titikArea.push(X(i) + ',' + Y(utama[i].saldo));
+        titikArea.push(X(n - 1) + ',' + (padAtas + plotH));
+        titikArea.push(X(0) + ',' + (padAtas + plotH));
+        svg.appendChild(sv('polygon', { points: titikArea.join(' '), fill: GARIS.saldo.warna, opacity: 0.08 }));
+      }
 
-      /* Skenario pembanding disembunyikan saat garis arus tampil — warnanya
-         bentrok (pesimis merah vs keluar merah) dan bikin grafik ramai. */
+      /* skenario pembanding hanya saat arus mati (kalau tidak, warnanya bentrok) */
       if (opt.semuaSkenario && !adaArus) {
         CFG.SKENARIO.forEach(function (sk) {
           if (sk.id === aktif || !seri[sk.id]) return;
           var dd2 = [];
           for (i = 0; i < seri[sk.id].length; i++) dd2.push((i ? 'L' : 'M') + X(i) + ' ' + Y(seri[sk.id][i].saldo));
           svg.appendChild(sv('path', {
-            d: dd2.join(' '), fill: 'none', stroke: sk.warna, 'stroke-width': 1.5,
-            'stroke-dasharray': '6 5', opacity: 0.5, 'stroke-linecap': 'round'
+            d: dd2.join(' '), fill: 'none', stroke: sk.warna, 'stroke-width': 1.4,
+            'stroke-dasharray': '5 5', opacity: 0.45, 'stroke-linecap': 'round'
           }));
         });
       }
     }
 
-    /* arus digambar sebelum garis saldo supaya saldo tetap paling menonjol */
-    garisArus('masuk', '#10b981');
-    garisArus('keluar', '#e11d48');
+    /* arus digambar sebelum saldo supaya garis saldo tetap paling menonjol */
+    garisArus('masuk');
+    garisArus('keluar');
 
     /* garis saldo: bagian aktual solid, proyeksi putus-putus */
     function jalur(dari, sampai) {
@@ -262,13 +325,16 @@
       return dd.join(' ');
     }
     if (tampilCfg.saldo) {
+      /* aktual = solid gelap, proyeksi = biru saldo. Skenario tidak lagi
+         mewarnai garis ini supaya tidak bentrok dengan hijau/merah arus. */
       if (idxCut >= 0) {
         svg.appendChild(sv('path', { d: jalur(0, idxCut), fill: 'none', stroke: '#0f172a',
-          'stroke-width': 2.6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+          'stroke-width': GARIS.saldo.tebal, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
       }
       if (idxCut < n - 1) {
-        svg.appendChild(sv('path', { d: jalur(Math.max(idxCut, 0), n - 1), fill: 'none', stroke: warnaAktif,
-          'stroke-width': 2.8, 'stroke-dasharray': idxCut >= 0 ? '7 5' : '0',
+        svg.appendChild(sv('path', { d: jalur(Math.max(idxCut, 0), n - 1), fill: 'none',
+          stroke: GARIS.saldo.warna, 'stroke-width': GARIS.saldo.tebal,
+          'stroke-dasharray': idxCut >= 0 ? '7 5' : '0',
           'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
       }
     }
@@ -294,14 +360,14 @@
         var xm = X(idxMin), ym = Y(minVal);
         var bahaya = ambang && minVal < ambang;
         svg.appendChild(sv('circle', { cx: xm, cy: ym, r: 6, fill: 'none',
-          stroke: bahaya ? '#e11d48' : warnaAktif, 'stroke-width': 2, opacity: 0.45 }));
-        svg.appendChild(sv('circle', { cx: xm, cy: ym, r: 3.5, fill: bahaya ? '#e11d48' : warnaAktif }));
+          stroke: bahaya ? GARIS.keluar.warna : GARIS.saldo.warna, 'stroke-width': 2, opacity: 0.45 }));
+        svg.appendChild(sv('circle', { cx: xm, cy: ym, r: 3.5, fill: bahaya ? GARIS.keluar.warna : GARIS.saldo.warna }));
         var lbl = sv('text', { x: xm, y: ym + 22, class: 'titik-label', 'text-anchor': 'middle',
-          fill: bahaya ? '#e11d48' : '#475569' });
+          fill: bahaya ? GARIS.keluar.warna : "#475569" });
         lbl.textContent = 'terendah ' + UI.rpS(minVal);
         svg.appendChild(lbl);
       }
-      svg.appendChild(sv('circle', { cx: X(n - 1), cy: Y(utama[n - 1].saldo), r: 4.5, fill: warnaAktif }));
+      svg.appendChild(sv('circle', { cx: X(n - 1), cy: Y(utama[n - 1].saldo), r: 4.5, fill: GARIS.saldo.warna }));
     }
 
     /* label X */
@@ -339,9 +405,9 @@
       var yDot = kunciDot === 'saldo' ? Y(d.saldo) : Ya(d[kunciDot]);
       hoverLine.setAttribute('x1', X(p.i)); hoverLine.setAttribute('x2', X(p.i)); hoverLine.setAttribute('opacity', 1);
       hoverDot.setAttribute('cx', X(p.i)); hoverDot.setAttribute('cy', yDot);
-      hoverDot.setAttribute('fill', kunciDot === 'masuk' ? '#10b981'
-        : kunciDot === 'keluar' ? '#e11d48'
-        : (d.tipe === 'aktual' ? '#0f172a' : warnaAktif));
+      hoverDot.setAttribute('fill', kunciDot === 'masuk' ? GARIS.masuk.warna
+        : kunciDot === 'keluar' ? GARIS.keluar.warna
+        : (d.tipe === 'aktual' ? '#0f172a' : GARIS.saldo.warna));
       hoverDot.setAttribute('opacity', 1);
 
       var html = '<div class="tip-tgl">' + labelPanjang(d, grain) + ' · <b>' + d.tipe + '</b></div>';
@@ -702,5 +768,5 @@
   }
 
   global.CHARTB = { garisSaldo: garisSaldo, batangArus: batangArus, donatKeluar: donatKeluar,
-    jembatan: jembatan, sparkline: sparkline, gauge: gauge };
+    jembatan: jembatan, sparkline: sparkline, gauge: gauge, GARIS: GARIS };
 })(window);
