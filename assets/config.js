@@ -12,7 +12,7 @@
      Kalau masih kosong → app jalan pakai data demo + localStorage.
      --------------------------------------------------------------------- */
   var CONN = {
-    APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbyrYA-mMUoFrsUFLg_SMov0PPUXmnPTolSO72gtdZLOZxRc5fAJgt-roxtKAFlWoBty/exec',                                        // <-- isi setelah deploy Web App
+    APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbz80CoNESLd36rYUsCshur5z_DE-ARZnMFZ19OeOCjMARVje6iHuwXtc8RnQTPJY9O6/exec',                                        // <-- isi setelah deploy Web App
     TOKEN: '',                                                  // opsional; samakan dgn TOKEN di Code.gs
     SHEET_ID: '1trHZ_CLBoA0Wl3vr9hIPgtKp2GRIF1asc-fWsxViPY8',   // Finance Dashboard
     SHEET_URL: 'https://docs.google.com/spreadsheets/d/1trHZ_CLBoA0Wl3vr9hIPgtKp2GRIF1asc-fWsxViPY8/edit'
@@ -258,13 +258,20 @@
   /* ---------------------------------------------------------------------
      POS PENGELUARAN YANG BOLEH BEDA ANTAR SKENARIO.
      Pengeluaran lain dianggap komitmen tetap: nominalnya sama di ketiga
-     skenario, jadi cukup diisi sekali di grid Optimis. Dua pos ini ikut
-     naik-turun mengikuti penjualan — belanja stok dan belanja iklan memang
-     direm kalau omset meleset.
+     skenario, jadi cukup diisi sekali di grid Optimis. Pos di sini ikut
+     naik-turun mengikuti penjualan — belanja stok, iklan, packaging, PPN
+     (ikut omset), dan dana achievement memang direm kalau omset meleset.
      Pos di luar daftar ini SENGAJA tidak bisa dibedakan, supaya tidak ada
      angka skenario yang diam-diam menyimpang tanpa alasan.
      --------------------------------------------------------------------- */
-  var COA_SKENARIO = ['out_hutang_supplier', 'out_iklan'];
+  var COA_SKENARIO = [
+    'out_hutang_supplier',   // pembayaran hutang supplier
+    'out_iklan',             // marketing (top up iklan & koin, campaign)
+    'out_cicilan_ppn',       // PPN — ikut naik-turun omset
+    'out_import',            // pembelian barang material / impor
+    'out_packaging',         // pembelian packaging
+    'out_achievement'        // dana achievement
+  ];
 
   /* ---------------------------------------------------------------------
      DEFAULT SETTING (bisa diubah di halaman Pengaturan → simpan ke tab Config)
