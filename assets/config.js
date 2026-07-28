@@ -55,7 +55,7 @@
     { no: 4,  id: 'out_beli_bahan',      nama: 'PEMBELIAN BAHAN',                                bucket: 'supplier' },
     { no: 5,  id: 'out_dp_supplier',     nama: 'PEMBAYARAN DP SUPPLIER',                         bucket: 'supplier' },
     { no: 6,  id: 'out_pinjam_wuling',   nama: 'PEMBAYARAN S PINJAM & CICILAN WULING',           bucket: 'lain' },
-    { no: 7,  id: 'out_cicilan_ppn',     nama: 'PEMBAYARAN CICILAN HUTANG PAJAK PPN',            bucket: 'lain' },
+    { no: 7,  id: 'out_cicilan_ppn',     nama: 'PPN',                                            bucket: 'lain' },
     { no: 8,  id: 'out_sewa_ruko',       nama: 'PEMBAYARAN SEWA RUKO & PAJAK',                   bucket: 'operasional' },
     { no: 9,  id: 'out_gaji',            nama: 'PEMBAYARAN GAJI',                                bucket: 'gaji' },
     { no: 10, id: 'out_thr',             nama: 'PEMBAYARAN THR',                                 bucket: 'gaji' },
